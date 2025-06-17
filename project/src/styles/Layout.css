@@ -1,0 +1,132 @@
+/* src/styles/Layout.css */
+
+:root {
+  --header-height: 64px;
+  --layout-bg: #f9fafb;
+  --header-bg: #ffffff;
+  --header-border: #e5e7eb;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --brand-primary: #4f46e5;
+  --brand-primary-hover: #4338ca;
+}
+
+.layout {
+  min-height: 100vh;
+  background-color: var(--layout-bg);
+  font-family: 'Inter', sans-serif;
+}
+
+.layout-header {
+  background-color: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  height: var(--header-height);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.header-nav {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 100%;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+}
+
+.nav-brand-icon {
+  height: 2rem;
+  width: 2rem;
+  color: var(--brand-primary);
+}
+
+.nav-brand-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+  background-color: #f3f4f6;
+}
+
+.nav-button {
+  background-color: var(--brand-primary);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 150ms ease;
+  display: inline-block;
+}
+
+.nav-button:hover {
+  background-color: var(--brand-primary-hover);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-left: 1px solid var(--header-border);
+  padding-left: 1rem;
+  margin-left: 1rem;
+}
+
+.user-info-email {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.signout-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0.25rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.signout-button:hover {
+  color: var(--text-primary);
+  background-color: #f3f4f6;
+}
+
+.layout-main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}

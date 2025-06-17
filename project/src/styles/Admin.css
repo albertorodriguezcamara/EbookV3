@@ -1,0 +1,275 @@
+/* === Hoja de Estilos UX-First para Panel de Administración === */
+
+/* --- Variables Globales y Paleta de Colores --- */
+:root {
+  /* Paleta de colores refinada y moderna */
+  --admin-primary: #4f46e5; /* Un índigo vibrante como color principal */
+  --admin-primary-hover: #4338ca;
+  --admin-primary-light: #e0e7ff;
+  --admin-success: #10b981;
+  --admin-danger: #ef4444;
+  --admin-warning: #f59e0b;
+  --admin-neutral: #6b7280; /* Gris para texto secundario y bordes */
+
+  /* Colores de fondo y texto */
+  --admin-bg: #f9fafb; /* Un gris muy claro para el fondo general */
+  --admin-card-bg: #ffffff;
+  --admin-text-primary: #111827;
+  --admin-text-secondary: #4b5563;
+
+  /* Propiedades de UI consistentes */
+  --admin-border-color: #e5e7eb;
+  --admin-border-radius-sm: 4px;
+  --admin-border-radius-md: 8px;
+  --admin-box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --admin-transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --admin-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* --- Estilos Base y Contenedores --- */
+.admin-container {
+  font-family: var(--admin-font-family);
+  background-color: var(--admin-bg);
+  color: var(--admin-text-primary);
+  padding: 2rem;
+  min-height: 100vh;
+}
+
+.admin-title {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 2rem;
+    color: var(--admin-text-primary);
+}
+
+.admin-section {
+  background-color: var(--admin-card-bg);
+  border-radius: var(--admin-border-radius-md);
+  box-shadow: var(--admin-box-shadow);
+  padding: 2rem;
+  margin-bottom: 2rem;
+  border: 1px solid var(--admin-border-color);
+}
+
+.admin-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--admin-border-color);
+}
+
+.admin-section-header h2 {
+  font-size: 1.25rem; /* Tamaño más contenido para títulos de sección */
+  font-weight: 600;
+  margin: 0;
+}
+
+/* --- Tablas Optimizadas para UX --- */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--admin-border-color);
+  vertical-align: middle; /* Alineación vertical para contenido de varias líneas */
+}
+
+.admin-table thead th {
+  color: var(--admin-text-secondary);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  background-color: var(--admin-bg);
+}
+
+.admin-table tbody tr {
+  transition: background-color var(--admin-transition);
+}
+
+.admin-table tbody tr:hover {
+  background-color: #f3f4f6; /* Un hover más sutil */
+}
+
+.admin-table .actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end; /* Alineado a la derecha es más estándar */
+}
+
+/* --- Formularios Intuitivos --- */
+.admin-form-container { /* Contenedor para formularios de edición/creación */
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-grid-2-col {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.admin-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-label {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--admin-text-secondary);
+}
+
+.admin-input, .admin-select, .admin-textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--admin-border-color);
+  border-radius: var(--admin-border-radius-md);
+  font-size: 1rem;
+  background-color: var(--admin-card-bg);
+  transition: border-color var(--admin-transition), box-shadow var(--admin-transition);
+}
+
+.admin-input:focus, .admin-select:focus, .admin-textarea:focus {
+  outline: none;
+  border-color: var(--admin-primary);
+  box-shadow: 0 0 0 3px var(--admin-primary-light);
+}
+
+.admin-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--admin-border-color);
+}
+
+/* --- Botones con Feedback Claro --- */
+.admin-btn {
+  padding: 0.6rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--admin-border-radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--admin-transition);
+  text-decoration: none;
+  display: inline-flex; /* Para alinear iconos si se añaden */
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.admin-btn:active {
+    transform: scale(0.97);
+}
+
+.admin-btn-primary {
+  background-color: var(--admin-primary);
+  color: white;
+}
+.admin-btn-primary:hover { background-color: var(--admin-primary-hover); }
+
+.admin-btn-danger {
+  background-color: var(--admin-danger);
+  color: white;
+}
+.admin-btn-danger:hover { background-color: #d73737; }
+
+.admin-btn-success {
+  background-color: var(--admin-success);
+  color: white;
+}
+.admin-btn-success:hover { background-color: #0d9268; }
+
+.admin-btn-secondary {
+  background-color: var(--admin-card-bg);
+  color: var(--admin-text-primary);
+  border-color: var(--admin-border-color);
+}
+.admin-btn-secondary:hover { background-color: var(--admin-bg); }
+
+
+/* --- Componentes Adicionales (Badges, Diálogos, etc.) --- */
+
+/* Badges */
+.admin-badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--admin-border-radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.admin-badge-success { background-color: #d1fae5; color: #065f46; }
+.admin-badge-danger { background-color: #fee2e2; color: #991b1b; }
+.admin-badge-warning { background-color: #fef3c7; color: #92400e; }
+.admin-badge-neutral { background-color: #e5e7eb; color: #4b5563; }
+.admin-badge-primary { background-color: var(--admin-primary-light); color: var(--admin-primary); }
+
+/* Diálogo de Confirmación */
+.admin-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(17, 24, 39, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    backdrop-filter: blur(4px);
+}
+
+.admin-dialog {
+    background-color: var(--admin-card-bg);
+    border-radius: var(--admin-border-radius-md);
+    padding: 2rem;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    width: 100%;
+    max-width: 450px;
+    animation: fadeIn 150ms ease-out;
+}
+
+.admin-dialog-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+.admin-dialog-content { font-size: 1rem; color: var(--admin-text-secondary); margin-bottom: 1.5rem; }
+
+/* Mensajes de Estado */
+.admin-error, .admin-loading {
+    padding: 1rem;
+    border-radius: var(--admin-border-radius-md);
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+}
+
+.admin-error { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.admin-loading { background-color: #e0e7ff; color: #3730a3; border: 1px solid #a5b4fc; }
+
+/* --- Animaciones y Media Queries --- */
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+    .admin-container { padding: 1rem; }
+    .admin-section { padding: 1.5rem; }
+    .admin-title { font-size: 1.5rem; }
+    .admin-section-header { flex-direction: column; align-items: flex-start; gap: 1rem; }
+    .admin-form-actions { justify-content: center; flex-direction: column; gap: 0.5rem; }
+    .admin-btn { width: 100%; }
+}
