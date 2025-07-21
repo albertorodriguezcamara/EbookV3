@@ -179,38 +179,37 @@ serve(async (req)=>{
     console.log('Public URL data:', urlData);
     if (urlErr) throw new Error(`Error fetching public URL: ${urlErr.message}`);
     // 1. Actualizar el job a "html_generated" con la URL pública
-    await supabase.from("export_jobs").update({
-      status: "html_generated",
-      status_message: "HTML generado con éxito.",
-      download_url: urlData.publicUrl
-    }).eq("id", job.id);
-    console.log('Updated export job:', job.id);
+    const { error: updateError } = await supabase.from("export_jobs").update({
+      status: 'generating_pdf',
+      status_message: 'HTML generated, starting PDF conversion.',
+      html_url: urlData.publicUrl,
+    }).eq('id', job.id);
 
-    // 2. Invocar la Google Cloud Function para iniciar la conversión
-    // La exportación se hará a PDF por defecto. El frontend podrá especificar el formato en el futuro.
-    const gcloudFunctionUrl = Deno.env.get('GCLOUD_EXPORT_FUNCTION_URL');
-    if (gcloudFunctionUrl) {
-      console.log(`Invoking Google Cloud Function at ${gcloudFunctionUrl} for job ${job.id}`);
-      // No esperamos la respuesta (fire and forget), la GCF se encargará de actualizar el job.
-      fetch(gcloudFunctionUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: job.id,
-          format: 'pdf' // El formato podrá ser dinámico (ej. 'docx') en el futuro
-        }),
-      }).catch((err) => {
-        // Si la invocación falla, lo registramos pero no bloqueamos la respuesta al usuario.
-        console.error(`Error invoking Google Cloud Function for job ${job.id}:`, err.message);
-      });
+    if (updateError) {
+      console.error('Error updating job with HTML URL:', updateError);
     } else {
-      console.error('GCLOUD_EXPORT_FUNCTION_URL environment variable not set. PDF/DOCX conversion will not be triggered.');
+      console.log('Successfully updated job with HTML URL. Now invoking GCloud function.');
+      // Asynchronously invoke the Google Cloud Function ONLY after successful DB update
+      const gcloudFunctionUrl = Deno.env.get('GCLOUD_EXPORT_FUNCTION_URL');
+      if (gcloudFunctionUrl) {
+        console.log(`Invoking Google Cloud Function at ${gcloudFunctionUrl} for job ${job.id}`);
+        // Fire-and-forget
+        fetch(gcloudFunctionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jobId: job.id,
+            format: 'pdf', // Or determine format from job payload
+          }),
+        }).catch(console.error); // Log any error during the fetch call itself
+      }
     }
 
-    // 3. Responder al cliente con la URL del HTML (el PDF llegará cuando finalice la otra función)
-    return new Response(JSON.stringify({
-      url: urlData.publicUrl
-    }), {
+    console.log(`Updated export job: ${job.id}`);
+
+    return new Response(JSON.stringify({ success: true, jobId: job.id }), {
       headers: {
         ...corsHeaders,
         "Content-Type": "application/json"

@@ -29,20 +29,44 @@ functions.http('exportDocument', async (req, res) => {
   }
 
   try {
-    // 1. Obtener datos del job desde Supabase
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const getJobWithRetry = async (jobId, retries = 3, delay = 2000) => {
+      for (let i = 0; i < retries; i++) {
+        console.log(`Fetching job details, attempt ${i + 1}`);
+        const { data: job, error: jobError } = await supabase
+          .from('export_jobs')
+          .select('*')
+          .eq('id', jobId)
+          .single();
+
+        if (jobError) {
+            // Si el job no se encuentra, reintentar no ayudará.
+            throw new Error(`Job not found: ${jobError.message}`);
+        }
+        
+        // Comprobar específicamente html_url
+        if (job && job.html_url) {
+          console.log('Found job with HTML URL.');
+          return job;
+        }
+        
+        console.log(`HTML URL not found. Retrying in ${delay / 1000}s...`);
+        if (i < retries - 1) {
+          await sleep(delay);
+        }
+      }
+      throw new Error('Job has no HTML URL to process after multiple retries.');
+    };
+
+    // 1. Obtener datos del job desde Supabase (con reintentos)
     await supabase.from('export_jobs').update({ status: 'processing', status_message: `Iniciando conversión a ${format}...` }).eq('id', jobId);
 
-    const { data: job, error: jobError } = await supabase
-      .from('export_jobs')
-      .select('*')
-      .eq('id', jobId)
-      .single();
-
-    if (jobError) throw new Error(`Job not found: ${jobError.message}`);
-    if (!job.download_url) throw new Error('Job has no HTML URL to process.');
+    const job = await getJobWithRetry(jobId);
 
     // 2. Descargar el HTML
-    const htmlResponse = await fetch(job.download_url);
+    console.log(`Downloading HTML from ${job.html_url}`);
+    const htmlResponse = await fetch(job.html_url);
     if (!htmlResponse.ok) throw new Error(`Failed to download HTML: ${htmlResponse.statusText}`);
     const htmlContent = await htmlResponse.text();
 
