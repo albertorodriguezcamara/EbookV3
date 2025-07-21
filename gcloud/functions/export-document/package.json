@@ -6,7 +6,8 @@
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
     "@supabase/supabase-js": "^2.0.0",
-    "puppeteer": "^19.0.0",
+    "@sparticuz/chromium": "^123.0.0",
+    "puppeteer-core": "^22.10.0",
     "html-to-docx": "^1.8.0"
   },
   "scripts": {

@@ -1,6 +1,7 @@
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const htmlToDocx = require('html-to-docx');
 
 // TODO: Cargar estas variables de forma segura desde Secret Manager
@@ -77,7 +78,12 @@ functions.http('exportDocument', async (req, res) => {
     // 3. Convertir a PDF o DOCX
     if (format === 'pdf') {
       console.log('Converting to PDF...');
-      const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+      const browser = await puppeteer.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      });
       const page = await browser.newPage();
       await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
       fileBuffer = await page.pdf({ format: 'A5', printBackground: true });
