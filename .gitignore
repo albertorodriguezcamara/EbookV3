@@ -1,0 +1,14 @@
+# Node
+node_modules/
+dist/
+.env
+*.log
+package-lock.json
+# Vite
+.project-*
+*.local
+.cache/
+# VSCode
+.vscode/
+# Mac
+.DS_Store

@@ -14,6 +14,7 @@ const initialState: WizardState = {
     image: null,
     cover: null,
   },
+  requestId: null,
 };
 
 const WIZARD_STORAGE_KEY = 'wizard-state-v1';
@@ -39,7 +40,8 @@ type WizardAction =
   | { type: 'SET_IS_ILLUSTRATED'; isIllustrated: boolean }
   | { type: 'SET_HAS_COVER'; hasCover: boolean }
   | { type: 'SET_AGENT_CONFIG'; agentConfig: WizardState['agentConfig'] }
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  | { type: 'SET_REQUEST_ID'; payload: string };
 
 function wizardReducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
@@ -74,6 +76,8 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       };
     case 'RESET':
       return { ...initialState, step: 1 };
+    case 'SET_REQUEST_ID':
+      return { ...state, requestId: action.payload };
     default:
       return state;
   }
@@ -94,7 +98,10 @@ export const WizardProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const nextStep = () => dispatch({ type: 'NEXT_STEP' });
   const prevStep = () => dispatch({ type: 'PREV_STEP' });
-  const reset = () => dispatch({ type: 'RESET' });
+  const reset = () => {
+    sessionStorage.removeItem(WIZARD_STORAGE_KEY);
+    dispatch({ type: 'RESET' });
+  };
 
   return (
     <WizardContext.Provider value={{ state, dispatch, nextStep, prevStep, reset }}>

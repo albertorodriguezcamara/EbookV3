@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
@@ -30,16 +30,23 @@ function App() {
             <Route path="/book-editor" element={<BookEditor />} />
 
             {/* Wizard de creación de libros */}
-            <Route path="/create-book" element={
-              <WizardProvider>
-                <WizardLayout />
-              </WizardProvider>
-            }>
-              <Route path="step/1" element={<StepCategory />} />
-              <Route path="step/2" element={<StepDetails />} />
-              <Route path="step/3" element={<StepAI />} />
-              <Route path="step/4" element={<StepReview />} />
-            </Route>
+            <Route
+              path="/create-book/*" // Usar un comodín para que esta ruta maneje todas las sub-rutas
+              element={ // WizardProvider envuelve el conjunto de rutas del wizard
+                <WizardProvider>
+                  <Routes> {/* Un nuevo conjunto de Routes para el wizard anidado */}
+                    <Route element={<WizardLayout />}> {/* WizardLayout actúa como layout para los pasos */}
+                      <Route path="step/1" element={<StepCategory />} />
+                      <Route path="step/2" element={<StepDetails />} />
+                      <Route path="step/3" element={<StepAI />} />
+                      <Route path="step/4" element={<StepReview />} />
+                      {/* Redirigir /create-book (sin step) a step/1 */}
+                      <Route index element={<Navigate to="step/1" replace />} />
+                    </Route>
+                  </Routes>
+                </WizardProvider>
+              }
+            />
             {/* Progreso de creación en vivo */}
             <Route path="/creating-book/:id" element={<CreatingBook />} />
           </Routes>

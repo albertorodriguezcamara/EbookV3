@@ -25,28 +25,22 @@ const ArrayInput: React.FC<{
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+    <div className="wizard-step-array-input">
+      <div className="wizard-step-array-input-container" style={{ display: 'flex', alignItems: 'center' }}>
         <input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={placeholder || 'Añadir elemento...'}
-          style={{ flexGrow: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAddItem();
-            }
-          }}
+          className="wizard-step-array-input-field"
         />
-        <button type="button" onClick={handleAddItem} style={{ marginLeft: '8px', padding: '8px 12px' }}>Añadir</button>
+        <button type="button" onClick={handleAddItem} className="wizard-btn wizard-btn-primary">Añadir</button>
       </div>
-      <ul style={{ listStyleType: 'none', paddingLeft: 0, marginTop: '10px' }}>
+      <ul className="wizard-step-array-input-list">
         {(value || []).map((item, index) => (
-          <li key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px', borderBottom: '1px solid #eee' }}>
+          <li key={index} className="wizard-step-array-input-item">
             {item}
-            <button type="button" onClick={() => handleRemoveItem(index)} style={{ background: 'none', border: 'none', color: 'red', cursor: 'pointer' }}>✖</button>
+            <button type="button" onClick={() => handleRemoveItem(index)} className="wizard-btn wizard-btn-danger">✖</button>
           </li>
         ))}
       </ul>
@@ -55,18 +49,28 @@ const ArrayInput: React.FC<{
 };
 
 const StepDetails: React.FC = () => {
-  const { state, dispatch, prevStep, nextStep, reset } = useWizard();
+  const { state, dispatch, prevStep, reset } = useWizard();
   const navigate = useNavigate();
   const [attributes, setAttributes] = useState<SubcategoryAttribute[]>([]);
   const [loadingAttributes, setLoadingAttributes] = useState(false);
 
-  const [formData, setFormData] = useState<Record<string, any>>(() => ({
-    provisional_title: '',
-    idea: '',
-    num_chapters: 5,
-    chapter_length: 'medio',
-    ...state.details,
-  }));
+  const [formData, setFormData] = useState<Record<string, any>>(() => {
+    const initialDetails = {
+      provisional_title: '',
+      author: '',
+      idea: '',
+      language: 'es', // Default language
+      generate_cover: false,
+      target_number_of_chapters: 5,
+      target_word_count: '1300', // Default to 'Corto'
+      ...state.details, // state.details will overwrite defaults if present
+    };
+    // If state.details had 'language' as undefined or null, or it wasn't present, ensure our default 'es' is set.
+    if (initialDetails.language === undefined || initialDetails.language === null || initialDetails.language === '') {
+      initialDetails.language = 'es';
+    }
+    return initialDetails;
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const fetchAttributes = useCallback(async () => {
@@ -152,9 +156,13 @@ const StepDetails: React.FC = () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData['provisional_title']) newErrors['provisional_title'] = 'El título provisional es obligatorio.';
+    if (!formData['author']) newErrors['author'] = 'El autor es obligatorio.';
     if (!formData['idea']) newErrors['idea'] = 'La idea principal es obligatoria.';
-    if (!formData['num_chapters'] || formData['num_chapters'] <= 0) newErrors['num_chapters'] = 'El número de capítulos es obligatorio y debe ser mayor que 0.';
-    if (!formData['chapter_length']) newErrors['chapter_length'] = 'Debes seleccionar una extensión para los capítulos.';
+    if (!formData['language']) newErrors['language'] = 'El idioma es obligatorio.';
+    if (!formData.target_number_of_chapters || formData.target_number_of_chapters < 1) {
+      newErrors['target_number_of_chapters'] = 'Debe haber al menos 1 capítulo.';
+    }
+    if (!formData.target_word_count) newErrors['target_word_count'] = 'Debes seleccionar una extensión para los capítulos.';
 
     attributes.forEach((attr: SubcategoryAttribute) => {
       if (attr.required) {
@@ -181,15 +189,21 @@ const StepDetails: React.FC = () => {
 
   const handleNext = useCallback(() => {
     if (validateForm()) {
-      dispatch({ type: 'SET_DETAILS', details: formData });
-      nextStep();
+      const processedDetails = {
+        ...formData,
+        target_word_count: parseInt(formData.target_word_count, 10),
+        target_number_of_chapters: parseInt(formData.target_number_of_chapters, 10),
+      };
+      dispatch({ type: 'SET_DETAILS', details: processedDetails });
     }
-  }, [dispatch, formData, nextStep, validateForm]);
+  }, [dispatch, formData, validateForm]);
 
   const handleCancel = useCallback(() => {
     reset();
     navigate('/');
-  }, [navigate, reset]);
+  }, [reset, navigate]);
+
+
 
   const renderField = useCallback((attr: SubcategoryAttribute) => {
     const commonProps = {
@@ -197,7 +211,6 @@ const StepDetails: React.FC = () => {
       name: attr.name,
       required: !!attr.required,
       className: errors[attr.name] ? 'input-error' : '',
-      style: { padding: '8px', marginBottom: '5px', border: errors[attr.name] ? '1px solid red' : '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box' as const },
     };
 
     switch (attr.type) {
@@ -217,7 +230,6 @@ const StepDetails: React.FC = () => {
             name={attr.name}
             checked={!!formData[attr.name]}
             onChange={(e) => handleInputChange(attr.name, e.target.checked, 'boolean')}
-            style={{ height: '20px', width: '20px' }}
           />
         );
       case 'select':
@@ -242,11 +254,11 @@ const StepDetails: React.FC = () => {
   }, [errors, formData]);
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-      <h2 style={{ textAlign: 'center' }}>2. Detalles del Libro</h2>
+    <div className="wizard-step-container">
+      <h2 className="wizard-step-title">2. Detalles del Libro</h2>
       <form onSubmit={(e) => e.preventDefault()} noValidate>
         <div className="form-group">
-          <label htmlFor="provisional_title" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+          <label htmlFor="provisional_title">
             Título Provisional<span style={{ color: 'red' }}>*</span>
           </label>
           <input
@@ -256,13 +268,27 @@ const StepDetails: React.FC = () => {
             value={formData.provisional_title || ''}
             onChange={(e) => handleInputChange('provisional_title', e.target.value, 'text')}
             className={errors['provisional_title'] ? 'input-error' : ''}
-            style={{ padding: '8px', marginBottom: '5px', border: errors['provisional_title'] ? '1px solid red' : '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }}
           />
-          {errors['provisional_title'] && <small style={{ color: 'red', display: 'block', marginTop: '3px' }}>{errors['provisional_title']}</small>}
+          {errors['provisional_title'] && <small style={{ color: 'red' }}>{errors['provisional_title']}</small>}
         </div>
 
         <div className="form-group">
-          <label htmlFor="idea" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+          <label htmlFor="author">
+            Autor<span style={{ color: 'red' }}>*</span>
+          </label>
+          <input
+            type="text"
+            id="author"
+            name="author"
+            value={formData.author || ''}
+            onChange={(e) => handleInputChange('author', e.target.value, 'text')}
+            className={errors['author'] ? 'input-error' : ''}
+          />
+          {errors['author'] && <small style={{ color: 'red' }}>{errors['author']}</small>}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="idea">
             Idea Principal / Sinopsis<span style={{ color: 'red' }}>*</span>
           </label>
           <textarea
@@ -271,49 +297,83 @@ const StepDetails: React.FC = () => {
             value={formData.idea || ''}
             onChange={(e) => handleInputChange('idea', e.target.value, 'textarea')}
             className={errors['idea'] ? 'input-error' : ''}
-            style={{ padding: '8px', marginBottom: '5px', border: errors['idea'] ? '1px solid red' : '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box', minHeight: '80px' }}
+            rows={4}
           />
-          {errors['idea'] && <small style={{ color: 'red', display: 'block', marginTop: '3px' }}>{errors['idea']}</small>}
+          {errors['idea'] && <small style={{ color: 'red' }}>{errors['idea']}</small>}
         </div>
 
         <div className="form-group">
-          <label htmlFor="num_chapters" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+          <label htmlFor="language">
+            Idioma del Libro<span style={{ color: 'red' }}>*</span>
+          </label>
+          <select
+            id="language"
+            name="language"
+            value={formData.language || 'es'}
+            onChange={(e) => handleInputChange('language', e.target.value, 'select')}
+            className={errors['language'] ? 'input-error' : ''}
+          >
+            <option value="es">Español</option>
+            <option value="en">Inglés</option>
+            <option value="fr">Francés</option>
+            <option value="de">Alemán</option>
+            <option value="pt">Portugués</option>
+            {/* TODO: Considerar cargar idiomas desde una lista más completa o configuración */}
+          </select>
+          {errors['language'] && <small style={{ color: 'red' }}>{errors['language']}</small>}
+        </div>
+
+        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="checkbox"
+            id="generate_cover"
+            name="generate_cover"
+            checked={formData.generate_cover || false}
+            onChange={(e) => handleInputChange('generate_cover', e.target.checked, 'boolean')}
+            style={{ width: 'auto' }}
+          />
+          <label htmlFor="generate_cover" style={{ marginBottom: '0' }}>
+            Generar portada con IA
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="target_number_of_chapters">
             Número de Capítulos<span style={{ color: 'red' }}>*</span>
           </label>
           <input
             type="number"
-            id="num_chapters"
-            name="num_chapters"
-            value={formData.num_chapters || ''}
-            onChange={(e) => handleInputChange('num_chapters', e.target.value, 'number')}
-            className={errors['num_chapters'] ? 'input-error' : ''}
-            style={{ padding: '8px', marginBottom: '5px', border: errors['num_chapters'] ? '1px solid red' : '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }}
+            id="target_number_of_chapters"
+            name="target_number_of_chapters"
+            value={formData.target_number_of_chapters || ''}
+            onChange={(e) => handleInputChange('target_number_of_chapters', e.target.value, 'number')}
+            className={errors['target_number_of_chapters'] ? 'input-error' : ''}
             min="1"
           />
-          {errors['num_chapters'] && <small style={{ color: 'red', display: 'block', marginTop: '3px' }}>{errors['num_chapters']}</small>}
+          {errors['target_number_of_chapters'] && <small style={{ color: 'red' }}>{errors['target_number_of_chapters']}</small>}
         </div>
 
         <div className="form-group">
-          <label htmlFor="chapter_length" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-            Extensión de los Capítulos<span style={{ color: 'red' }}>*</span>
+          <label htmlFor="target_word_count">
+            Extensión de los Capítulos (palabras)<span style={{ color: 'red' }}>*</span>
           </label>
           <select
-            id="chapter_length"
-            name="chapter_length"
-            value={formData.chapter_length || 'medio'}
-            onChange={(e) => handleInputChange('chapter_length', e.target.value, 'select')}
-            className={errors['chapter_length'] ? 'input-error' : ''}
-            style={{ padding: '8px', marginBottom: '5px', border: errors['chapter_length'] ? '1px solid red' : '1px solid #ccc', borderRadius: '4px', width: '100%', boxSizing: 'border-box' }}
+            id="target_word_count"
+            name="target_word_count"
+            value={formData.target_word_count || '1300'}
+            onChange={(e) => handleInputChange('target_word_count', e.target.value, 'select')}
+            className={errors['target_word_count'] ? 'input-error' : ''}
           >
-            <option value="corto">Corto (~500 palabras)</option>
-            <option value="medio">Medio (~1500 palabras)</option>
-            <option value="largo">Largo (~2500+ palabras)</option>
+            <option value="1300">Corto (800–1,800 palabras)</option>
+            <option value="2650">Medio (1,800–3,500 palabras)</option>
+            <option value="4750">Largo (3,500–6,000 palabras)</option>
+            <option value="8000">Extra-largo (6,000–10,000+ palabras)</option>
           </select>
-          {errors['chapter_length'] && <small style={{ color: 'red', display: 'block', marginTop: '3px' }}>{errors['chapter_length']}</small>}
+          {errors['target_word_count'] && <small style={{ color: 'red', display: 'block', marginTop: '3px' }}>{errors['target_word_count']}</small>}
         </div>
 
         {loadingAttributes && <p>Cargando atributos dinámicos...</p>}
-        {attributes.length > 0 && <h3 style={{ marginTop: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}>Atributos Específicos</h3>}
+        {attributes.length > 0 && <h3 className="wizard-step-subtitle">Atributos Específicos</h3>}
         {attributes.map(attr => (
           <div className="form-group" key={attr.id}>
             <label htmlFor={attr.name} style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
@@ -326,10 +386,12 @@ const StepDetails: React.FC = () => {
           </div>
         ))}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-          <button type="button" onClick={prevStep} style={{ padding: '10px 20px' }}>Atrás</button>
-          <button type="button" onClick={handleCancel} style={{ padding: '10px 20px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}>Cancelar</button>
-          <button type="button" onClick={handleNext} style={{ padding: '10px 20px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px' }}>Siguiente</button>
+        <div className="wizard-nav-buttons">
+          <div className="wizard-nav-group">
+            <button type="button" onClick={handleCancel} className="wizard-btn wizard-btn-danger">Cancelar</button>
+            <button type="button" onClick={prevStep} className="wizard-btn wizard-btn-warning">Atrás</button>
+          </div>
+          <button type="button" onClick={handleNext} className="wizard-btn wizard-btn-primary">Siguiente</button>
         </div>
       </form>
     </div>

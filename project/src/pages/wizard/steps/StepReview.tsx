@@ -20,320 +20,210 @@ interface ResolvedDetail {
   id: string;
   displayName: string;
   value: any;
-  type: string; // To help in rendering the value appropriately
+  type: string;
 }
 
 const StepReview: React.FC = () => {
-  const { state, prevStep, reset } = useWizard();
+  const { state, dispatch, prevStep, reset } = useWizard();
   const navigate = useNavigate();
 
-  const [categoryName, setCategoryName] = useState<string | null>(null);
-  const [subcategoryName, setSubcategoryName] = useState<string | null>(null);
-  const [resolvedAgents, setResolvedAgents] = useState<ResolvedAgents>({});
-  const [resolvedDetails, setResolvedDetails] = useState<ResolvedDetail[]>([]);
-  
-  const [loadingReviewData, setLoadingReviewData] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
+  const [reviewData, setReviewData] = useState<{
+    categoryName: string | null;
+    subcategoryName: string | null;
+    resolvedAgents: ResolvedAgents;
+    resolvedDetails: ResolvedDetail[];
+  } | null>(null);
+
   useEffect(() => {
     const fetchReviewData = async () => {
-      setLoadingReviewData(true);
+      if (state.step !== 4) return;
+      setLoading(true);
       setError(null);
+
       try {
-        // Fetch Category Name
+        let categoryName: string | null = null;
         if (state.categoryId) {
-          const { data: catData, error: catError } = await supabase
-            .from('categories')
-            .select('display_name')
-            .eq('id', state.categoryId)
-            .single();
-          if (catError) throw new Error(`Error cargando categoría: ${catError.message}`);
-          setCategoryName(catData?.display_name || 'Desconocido');
+          const { data, error } = await supabase.from('categories').select('display_name').eq('id', state.categoryId).maybeSingle();
+          if (error) throw new Error(`Error cargando categoría: ${error.message}`);
+          categoryName = data?.display_name || 'Desconocido';
         }
 
-        // Resolve Detail Display Names and Values
-        if (Object.keys(state.details).length > 0) {
-          const details: ResolvedDetail[] = [];
-          const dynamicAttributes: Record<string, { displayName: string, type: string }> = {};
-
-          // 1. Fetch definitions for DYNAMIC attributes
-          if (state.subcategoryId) {
-            const { data: subcatData, error: subcatError } = await supabase
-              .from('categories')
-              .select('display_name')
-              .eq('id', state.subcategoryId)
-              .single();
-            if (subcatError) throw new Error(`Error cargando subcategoría: ${subcatError.message}`);
-            
-            const fetchedSubcategoryName = subcatData?.display_name || null;
-            setSubcategoryName(fetchedSubcategoryName || 'Desconocido'); // Keep this for the UI
-
-            if (fetchedSubcategoryName) {
-              const { data: attrsData, error: attrsError } = await supabase
-                .from('subcategory_attributes')
-                .select('name, display_name, type')
-                .eq('subcategory', fetchedSubcategoryName);
-              
-              if (attrsError) throw new Error(`Error cargando atributos de subcategoría: ${attrsError.message}`);
-
-              if (attrsData) {
-                attrsData.forEach(attr => {
-                  dynamicAttributes[attr.name] = { displayName: attr.display_name, type: attr.type };
-                });
-              }
-            }
+        let subcategoryName: string | null = null;
+        const dynamicAttributes: Record<string, { displayName: string, type: string }> = {};
+        if (state.subcategoryId) {
+          const { data: subcatData, error: subcatError } = await supabase.from('categories').select('name, display_name').eq('id', state.subcategoryId).maybeSingle();
+          if (subcatError) throw new Error(`Error cargando subcategoría: ${subcatError.message}`);
+          subcategoryName = subcatData?.display_name || 'Desconocido';
+          if (subcatData?.name) {
+            const { data: attrsData, error: attrsError } = await supabase.from('subcategory_attributes').select('name, display_name, type').eq('subcategory', subcatData.name);
+            if (attrsError) throw new Error(`Error cargando atributos: ${attrsError.message}`);
+            attrsData?.forEach(attr => { dynamicAttributes[attr.name] = { displayName: attr.display_name, type: attr.type }; });
           }
+        }
 
-          // 2. Define FIXED attributes
-          const fixedAttributes: Record<string, { displayName: string, type: string, order: number }> = {
-            provisional_title: { displayName: 'Título Provisional', type: 'text', order: 1 },
-            idea: { displayName: 'Idea Principal / Sinopsis', type: 'textarea', order: 2 },
-            num_chapters: { displayName: 'Número de Capítulos', type: 'number', order: 3 },
-            chapter_length: { displayName: 'Extensión de los Capítulos', type: 'select', order: 4 },
+        const fixedAttributes: Record<string, { displayName: string, type: string, order: number }> = {
+          provisional_title: { displayName: 'Título Provisional', type: 'text', order: 1 },
+          author: { displayName: 'Autor', type: 'text', order: 2 },
+          idea: { displayName: 'Idea Principal / Sinopsis', type: 'textarea', order: 3 },
+          language: { displayName: 'Idioma', type: 'select', order: 4 },
+          target_number_of_chapters: { displayName: 'Número de Capítulos', type: 'number', order: 5 },
+          target_word_count: { displayName: 'Extensión (palabras por cap.)', type: 'select', order: 6 },
+          generate_cover: { displayName: 'Generar Portada IA', type: 'boolean', order: 7 },
+        };
+
+        const resolvedDetails = Object.entries(state.details).map(([key, value]) => {
+          const attr = fixedAttributes[key] || dynamicAttributes[key];
+          return {
+            id: key,
+            displayName: attr?.displayName || key,
+            value: value,
+            type: attr?.type || 'text',
           };
+        }).sort((a, b) => (fixedAttributes[a.id]?.order ?? Infinity) - (fixedAttributes[b.id]?.order ?? Infinity));
 
-          // 3. Iterate through all details in state and build the resolved list
-          for (const key in state.details) {
-            if (state.details.hasOwnProperty(key) && state.details[key] !== null && state.details[key] !== '') {
-              let displayName = key;
-              let type = 'text';
-              let value = state.details[key];
+        const resolvedAgents: ResolvedAgents = {};
+        const agentRoles = Object.keys(state.agentConfig) as Array<keyof WizardState['agentConfig']>;
+        const modelIds = agentRoles.map(role => state.agentConfig[role]?.modelId).filter(Boolean) as string[];
 
-              if (fixedAttributes[key]) {
-                displayName = fixedAttributes[key].displayName;
-                type = fixedAttributes[key].type;
-                if (key === 'chapter_length') {
-                  switch(value) {
-                    case 'corto': value = 'Corto (~500 palabras)'; break;
-                    case 'medio': value = 'Medio (~1500 palabras)'; break;
-                    case 'largo': value = 'Largo (~2500+ palabras)'; break;
-                  }
-                }
-              } else if (dynamicAttributes[key]) {
-                displayName = dynamicAttributes[key].displayName;
-                type = dynamicAttributes[key].type;
-              } else {
-                continue; // Skip details that have no definition
-              }
+        if (modelIds.length > 0) {
+          const { data: models, error: modelError } = await supabase.from('ai_models').select('id, display_name, ai_providers(name)').in('id', modelIds);
+          if (modelError) throw new Error(`Error cargando modelos: ${modelError.message}`);
 
-              details.push({
-                id: key,
-                displayName,
-                value,
-                type,
-              });
+          const modelMap = new Map(models.map(m => [m.id, m]));
+
+          for (const role of agentRoles) {
+            const modelId = state.agentConfig[role]?.modelId;
+            if (modelId && modelMap.has(modelId)) {
+              const model = modelMap.get(modelId);
+              const provider = model?.ai_providers as any;
+              resolvedAgents[role] = {
+                providerName: Array.isArray(provider) ? provider[0]?.name : provider?.name || 'N/A',
+                modelName: model?.display_name || 'N/A',
+              };
             }
           }
-          
-          // 4. Sort the details to show fixed ones first, in order
-          details.sort((a, b) => {
-            const orderA = fixedAttributes[a.id]?.order ?? 99;
-            const orderB = fixedAttributes[b.id]?.order ?? 99;
-            return orderA - orderB;
-          });
-
-          setResolvedDetails(details);
         }
 
-        // Resolve Agent Names
-        const agentPromises = (Object.keys(state.agentConfig) as Array<keyof WizardState['agentConfig']>)
-          .filter(role => state.agentConfig[role]?.providerId && state.agentConfig[role]?.modelId)
-          .map(async (role) => {
-            const config = state.agentConfig[role];
-            if (!config) return { role, data: { providerName: null, modelName: null } };
-
-            const { data: provData, error: provError } = await supabase
-              .from('ai_providers')
-              .select('name')
-              .eq('id', config.providerId)
-              .single();
-            if (provError) console.warn(`Error cargando proveedor para ${role}: ${provError.message}`);
-            
-            const { data: modelData, error: modelError } = await supabase
-              .from('ai_models')
-              .select('display_name')
-              .eq('id', config.modelId)
-              .single();
-            if (modelError) console.warn(`Error cargando modelo para ${role}: ${modelError.message}`);
-
-            return {
-              role,
-              data: {
-                providerName: provData?.name || 'No encontrado',
-                modelName: modelData?.display_name || 'No encontrado',
-              }
-            };
-          });
-        
-        const resolvedAgentResults = await Promise.all(agentPromises);
-        const newResolvedAgents: ResolvedAgents = {};
-        resolvedAgentResults.forEach(res => {
-          if (res) newResolvedAgents[res.role as keyof ResolvedAgents] = res.data;
-        });
-        setResolvedAgents(newResolvedAgents);
+        setReviewData({ categoryName, subcategoryName, resolvedAgents, resolvedDetails });
 
       } catch (err: any) {
-        console.error("Error fetching review data:", err);
-        setError(err.message || 'Error al cargar los datos para la revisión.');
+        setError(err.message || 'Ocurrió un error desconocido.');
+      } finally {
+        setLoading(false);
       }
-      setLoadingReviewData(false);
     };
 
-    if (state.step === 4) { // Only fetch if this step is active
-        fetchReviewData();
-    }
-  }, [state.categoryId, state.subcategoryId, state.details, state.agentConfig, state.step]);
+    fetchReviewData();
+  }, [state.step, state.categoryId, state.subcategoryId, state.details, state.agentConfig]);
 
   const handleCreateBook = async () => {
-    if (!termsAccepted) {
-      setError('Debes aceptar los términos y condiciones para continuar.');
-      return;
-    }
+    setLoading(true);
     setError(null);
-    setLoadingReviewData(true); // Use loading state for creation process
-
     try {
-      // 1. Prepare book data from wizard state
-      const { data: { user } } = await supabase.auth.getUser();
-      const bookPayload = {
-        user_id: user?.id || null,
-        title: state.details?.title || 'Libro sin título', // Assuming 'title' is a common detail
-        category_id: state.categoryId,
-        subcategory_id: state.subcategoryId,
-        // Store details as JSON. Ensure it's not excessively large or complex.
-        // Consider if all details should be stored or just a subset/reference.
-        form_details: state.details, 
-        ai_config: state.agentConfig, // Store agent configuration
-        status: 'pending', // Initial status
-        // Add other relevant fields from your 'books' table schema
+      const ai_config: { [key: string]: string | null } = {
+        writer_model_id: state.agentConfig.writer?.modelId || null,
+        editor_model_id: state.agentConfig.editor?.modelId || null,
+        image_generator_model_id: state.details.generate_cover ? state.agentConfig.cover?.modelId || null : null,
       };
 
-      if (!bookPayload.user_id) {
-        throw new Error('Usuario no autenticado. No se puede crear el libro.');
+      const { provisional_title, author, idea, language, target_word_count, target_number_of_chapters, generate_cover, ...otherDetails } = state.details;
+      const book_attributes = { ...otherDetails, is_illustrated: state.isIllustrated };
+
+      const bookPayload = {
+        title: provisional_title, author, idea, language,
+        category_id: state.categoryId,
+        subcategory_id: state.subcategoryId,
+        target_word_count: target_word_count ? parseInt(target_word_count, 10) : null,
+        target_number_of_chapters: target_number_of_chapters ? parseInt(target_number_of_chapters, 10) : null,
+        book_attributes,
+        ai_config,
+      };
+
+      console.log('Sending bookPayload:', JSON.stringify(bookPayload, null, 2));
+    const { data, error } = await supabase.functions.invoke('handle-book-creation-request', { body: bookPayload });
+
+      console.log('Response from handle-book-creation-request:', JSON.stringify(data, null, 2));
+      if (error) {
+        let msg = error.message;
+        try { msg = JSON.parse(error.context?.response?.text || '{}').error || msg; } catch (e) {}
+        throw new Error(`Error al crear el libro: ${msg}`);
       }
 
-      // 2. Insert into 'books' table
-      const { data: newBook, error: insertError } = await supabase
-        .from('books')
-        .insert([bookPayload])
-        .select('id')
-        .single();
-
-      if (insertError) {
-        throw new Error(`Error al crear el libro: ${insertError.message}`);
+      if (data && data.request_id) {
+        reset();
+        dispatch({ type: 'SET_REQUEST_ID', payload: data.request_id });
+        navigate(`/creating-book/${data.request_id}`);
+      } else {
+        throw new Error('La respuesta no incluyó un ID de solicitud.');
       }
-
-      if (!newBook || !newBook.id) {
-        throw new Error('No se pudo obtener el ID del libro creado.');
-      }
-
-      // 3. Reset wizard state
-      reset();
-
-      // 4. Navigate to the 'creating book' page or dashboard
-      // For now, let's navigate to a placeholder creating page with the new book's ID
-      navigate(`/creating-book/${newBook.id}`); 
-      // Or navigate('/dashboard') if direct creation is preferred
-
     } catch (err: any) {
-      console.error("Error creating book:", err);
-      setError(err.message || 'Ocurrió un error al intentar crear el libro.');
-      setLoadingReviewData(false);
+      setError(err.message || 'Ocurrió un error inesperado.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleCancel = () => {
-    reset();
-    navigate('/'); // Redirige a la página principal o dashboard
-  };
+  const handleCancel = () => { reset(); navigate('/'); };
 
-  if (loadingReviewData && state.step === 4) return <p>Cargando revisión...</p>;
-  if (error) return <p style={{ color: 'red' }}>Error: {error}</p>;
-  // Only render content if it's the current step, otherwise WizardLayout might show it briefly during transitions
-  if (state.step !== 4) return null; 
+  if (state.step !== 4) return null;
+  if (loading) return <div className="wizard-step-container"><p>Cargando revisión...</p></div>;
+  if (error) return <div className="wizard-step-container"><p style={{ color: 'red' }}>Error: {error}</p></div>;
+  if (!reviewData) return <div className="wizard-step-container"><p>No hay datos para mostrar.</p></div>;
+
+  const { categoryName, subcategoryName, resolvedAgents, resolvedDetails } = reviewData;
 
   return (
-    <div>
-      <h2>Revisa y Confirma tu Libro</h2>
+    <div className="wizard-step-container">
+      <h2 className="wizard-step-title">Revisa y Confirma tu Libro</h2>
 
-      <section style={{ marginBottom: '20px' }}>
+      <section className="review-section">
         <h4>Categoría</h4>
-        <p><strong>Categoría:</strong> {categoryName || 'No seleccionada'}</p>
-        <p><strong>Subcategoría:</strong> {subcategoryName || 'No seleccionada'}</p>
+        <div className="review-item"><div className="review-item-label">Categoría:</div><div className="review-item-value">{categoryName || 'N/A'}</div></div>
+        <div className="review-item"><div className="review-item-label">Subcategoría:</div><div className="review-item-value">{subcategoryName || 'N/A'}</div></div>
       </section>
 
-      <section style={{ marginBottom: '20px' }}>
+      <section className="review-section">
         <h4>Detalles del Libro</h4>
-        {resolvedDetails.length > 0 ? (
-          <ul>
-            {resolvedDetails.map(detail => (
-              <li key={detail.id}>
-                <strong>{detail.displayName}:</strong> {typeof detail.value === 'boolean' ? (detail.value ? 'Sí' : 'No') : detail.value.toString()}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No se han proporcionado detalles.</p>
-        )}
+        {resolvedDetails.map(d => (
+          <div className="review-item" key={d.id}>
+            <div className="review-item-label">{d.displayName}:</div>
+            <div className="review-item-value">{typeof d.value === 'boolean' ? (d.value ? 'Sí' : 'No') : d.value?.toString() || 'N/A'}</div>
+          </div>
+        ))}
       </section>
 
-      <section style={{ marginBottom: '20px' }}>
+      <section className="review-section">
         <h4>Configuración de IA</h4>
-        {Object.keys(resolvedAgents).length > 0 ? (
-          <ul>
-            {(Object.keys(resolvedAgents) as Array<keyof ResolvedAgents>).map(role => {
-              const agent = resolvedAgents[role];
-              if (!agent || !agent.providerName) return null;
-              return (
-                <li key={role} style={{ textTransform: 'capitalize' }}>
-                  <strong>{role.replace('_', ' ')}:</strong> {agent.providerName} - {agent.modelName}
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p>No se ha configurado la IA.</p>
-        )}
+        {Object.entries(resolvedAgents).map(([role, agent]) => {
+          if (!agent?.providerName) return null;
+          return (
+            <div className="review-item" key={role}>
+              <div className="review-item-label" style={{ textTransform: 'capitalize' }}>{role}:</div>
+              <div className="review-item-value">{agent.providerName} - {agent.modelName}</div>
+            </div>
+          );
+        })}
       </section>
 
-      <div style={{ marginTop: '20px', marginBottom: '20px' }}>
-        <label>
-          <input 
-            type="checkbox" 
-            checked={termsAccepted} 
-            onChange={(e) => setTermsAccepted(e.target.checked)} 
-          />
-          Acepto los Términos y Condiciones y entiendo los costes asociados (si aplican).
+      <div className="form-group">
+        <label className="wizard-checkbox-container">
+          <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} style={{ display: 'none' }} />
+          <div className={`wizard-checkbox ${termsAccepted ? 'checked' : ''}`}></div>
+          Acepto los Términos y Condiciones y entiendo los costes asociados.
         </label>
       </div>
 
-      <div style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <button 
-            type="button" 
-            onClick={handleCancel}
-            style={{ padding: '10px 15px', marginRight: '10px', cursor: 'pointer', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}
-            disabled={loadingReviewData}
-          >
-            Cancelar
-          </button>
-          <button 
-            type="button" 
-            onClick={prevStep} 
-            style={{ padding: '10px 15px', cursor: 'pointer', backgroundColor: '#ff9800', color: 'white', border: 'none', borderRadius: '4px' }}
-            disabled={loadingReviewData}
-          >
-            Atrás
-          </button>
+      <div className="wizard-nav-buttons">
+        <div className="wizard-nav-group">
+          <button type="button" onClick={handleCancel} className="wizard-btn wizard-btn-danger" disabled={loading}>Cancelar</button>
+          <button type="button" onClick={prevStep} className="wizard-btn wizard-btn-warning" disabled={loading}>Atrás</button>
         </div>
-        <button 
-          type="button" 
-          onClick={handleCreateBook} 
-          style={{ padding: '10px 15px', cursor: 'pointer', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px' }}
-          disabled={!termsAccepted || loadingReviewData}
-        >
-          {loadingReviewData ? 'Creando libro...' : 'Crear Libro'}
+        <button type="button" onClick={handleCreateBook} className={`wizard-btn wizard-btn-success ${!loading && termsAccepted ? 'wizard-btn-pulse' : ''}`} disabled={!termsAccepted || loading}>
+          {loading ? 'Procesando...' : 'Crear Libro'}
         </button>
       </div>
     </div>

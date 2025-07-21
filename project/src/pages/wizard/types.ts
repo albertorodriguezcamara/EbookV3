@@ -7,11 +7,12 @@ export interface WizardState {
   details: Record<string, any>;
   isIllustrated: boolean;
   hasCover: boolean;
+  requestId?: string | null;
   agentConfig: {
     editor:  ProviderChoice | null;
     writer:  ProviderChoice | null;
     image:   ProviderChoice | null;
-    cover:   ProviderChoice | null;
+    cover: ProviderChoice | null;   // Standardized to 'cover' for cover generation
   };
 }
 

@@ -77,17 +77,16 @@ const StepCategory: React.FC = () => {
   };
 
   return (
-    <div>
-      <h2>1. Selecciona Categoría y Subcategoría</h2>
+    <div className="wizard-step-container">
+      <h2 className="wizard-step-title">1. Selecciona Categoría y Subcategoría</h2>
       
-      <div style={{ marginBottom: '20px' }}>
-        <label htmlFor="category-select" style={{ display: 'block', marginBottom: '5px' }}>Categoría:</label>
+      <div className="form-group">
+        <label htmlFor="category-select">Categoría:</label>
         <select 
           id="category-select" 
           value={selectedCategoryId || ''} 
           onChange={handleCategoryChange}
           disabled={loadingCategories}
-          style={{ padding: '8px', minWidth: '200px' }}
         >
           <option value="" disabled>{loadingCategories ? 'Cargando...' : 'Selecciona una categoría'}</option>
           {categories.map(cat => (
@@ -97,14 +96,13 @@ const StepCategory: React.FC = () => {
       </div>
 
       {selectedCategoryId && (
-        <div style={{ marginBottom: '20px' }}>
-          <label htmlFor="subcategory-select" style={{ display: 'block', marginBottom: '5px' }}>Subcategoría:</label>
+        <div className="form-group">
+          <label htmlFor="subcategory-select">Subcategoría:</label>
           <select 
             id="subcategory-select" 
             value={selectedSubcategoryId || ''} 
             onChange={handleSubcategoryChange}
             disabled={loadingSubcategories || subcategories.length === 0}
-            style={{ padding: '8px', minWidth: '200px' }}
           >
             <option value="" disabled>
               {loadingSubcategories ? 'Cargando...' : (subcategories.length === 0 ? 'No hay subcategorías' : 'Selecciona una subcategoría')}
@@ -116,17 +114,19 @@ const StepCategory: React.FC = () => {
         </div>
       )}
 
-      <div style={{ marginTop: '20px' }}>
-        <button 
-          onClick={handleCancel}
-          style={{ padding: '10px 15px', marginRight: '10px', cursor: 'pointer', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}
-        >
-          Cancelar
-        </button>
+      <div className="wizard-nav-buttons">
+        <div className="wizard-nav-group">
+          <button 
+            onClick={handleCancel}
+            className="wizard-btn wizard-btn-danger"
+          >
+            Cancelar
+          </button>
+        </div>
         <button 
           onClick={handleNext} 
           disabled={!selectedCategoryId || !selectedSubcategoryId}
-          style={{ padding: '10px 15px', cursor: (!selectedCategoryId || !selectedSubcategoryId) ? 'not-allowed' : 'pointer', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px' }}
+          className="wizard-btn wizard-btn-primary"
         >
           Siguiente
         </button>

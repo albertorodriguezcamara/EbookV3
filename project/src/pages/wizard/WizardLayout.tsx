@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useWizard } from './WizardContext';
+import '../../styles/wizard.css';
 
 const steps = [
   { step: 1, label: 'Categoría' },
