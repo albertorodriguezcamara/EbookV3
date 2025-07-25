@@ -48,6 +48,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Extraer campos KDP de export_options
+    const kdpFormatSize = export_options?.kdp_format_size || null;
+    const kdpFormatType = export_options?.kdp_format_type || null;
+    const kdpInkType = export_options?.kdp_ink_type || null;
+    const kdpPaperType = export_options?.kdp_paper_type || null;
+
     const { data: job, error: jobError } = await supabase
       .from('export_jobs')
       .insert({
@@ -57,6 +63,10 @@ Deno.serve(async (req) => {
         color_scheme,
         export_options,
         editor_model_id, // Puede ser null, lo cual es correcto
+        kdp_format_size: kdpFormatSize,
+        kdp_format_type: kdpFormatType,
+        kdp_ink_type: kdpInkType,
+        kdp_paper_type: kdpPaperType,
         status: 'pending',
         status_message: 'Job created and awaiting processing.',
       })
@@ -71,12 +81,35 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Non-blocking invocation of the next step in the process
-    supabase.functions.invoke('generate-book-html', { 
+    // Non-blocking invocation of the new DOCX generation pipeline
+    console.log(`🚀 [${job.id}] Intentando invocar función generate-book-docx...`);
+    console.log(`📋 [${job.id}] Job payload:`, {
+      id: job.id,
+      book_id: job.book_id,
+      user_id: job.user_id,
+      format: job.format,
+      status: job.status
+    });
+    
+    supabase.functions.invoke('generate-book-docx', { 
       body: { record: job }
-    }).catch(invokeError => {
-      // Log the error but don't block the response to the client
-      console.error('Failed to invoke generate-book-html function:', invokeError);
+    }).then((response) => {
+      console.log(`✅ [${job.id}] Función generate-book-docx invocada exitosamente:`, response);
+    }).catch(async (invokeError) => {
+      // Log the error and update job status
+      console.error('Failed to invoke generate-book-docx function:', invokeError);
+      
+      // Update job status to failed
+      try {
+        await supabase.from('export_jobs').update({
+          status: 'failed',
+          status_message: `Error invoking generate-book-docx: ${invokeError.message || 'Unknown error'}`,
+          progress_percentage: 0
+        }).eq('id', job.id);
+        console.log(`Job ${job.id} marked as failed due to invocation error`);
+      } catch (updateError) {
+        console.error('Failed to update job status to failed:', updateError);
+      }
     });
 
     return new Response(JSON.stringify({ job_id: job.id }), {

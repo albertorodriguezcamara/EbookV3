@@ -1,131 +1,151 @@
 const functions = require('@google-cloud/functions-framework');
 const { createClient } = require('@supabase/supabase-js');
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
-const htmlToDocx = require('html-to-docx');
+const axios = require('axios');
 
-// TODO: Cargar estas variables de forma segura desde Secret Manager
+// Cargar variables de entorno
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CLOUDMERSIVE_API_KEY = process.env.CLOUDMERSIVE_API_KEY; // ¡NUEVO!
 
+// Inicializar cliente de Supabase
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 /**
- * HTTP Cloud Function que convierte un HTML (almacenado en Supabase) a PDF o DOCX.
- * 
- * @param {Object} req Cloud Function request context.
- * @param {Object} res Cloud Function response context.
+ * Registra un mensaje de log y actualiza el estado del job en Supabase.
+ * @param {string} jobId - El ID del job.
+ * @param {string} message - El mensaje a registrar.
+ * @param {'processing' | 'failed' | 'completed'} [status] - El nuevo estado del job.
  */
-functions.http('exportDocument', async (req, res) => {
-  console.log('Received request:', req.body);
+async function updateJobStatus(jobId, message, status = 'processing') {
+  console.log(`[${jobId}] ${message}`);
+  try {
+    await supabase.from('export_jobs').update({ status, status_message: message }).eq('id', jobId);
+  } catch (error) {
+    console.error(`[${jobId}] Failed to update job status in Supabase:`, error.message);
+  }
+}
 
+/**
+ * Genera un documento DOCX usando la nueva Edge Function generate-book-docx.
+ * Esta función reemplaza el flujo anterior de HTML → PDF → DOCX por un pipeline
+ * LLM + docxtemplater que genera DOCX directamente desde los datos del libro.
+ * @param {string} jobId - El ID del job para logging.
+ * @returns {Promise<string>} - Una promesa que se resuelve con la ruta del archivo DOCX generado.
+ */
+async function generateDocxWithEdgeFunction(jobId) {
+  console.log(`[${jobId}] Iniciando generación DOCX con Edge Function...`);
+  
+  await updateJobStatus(jobId, 'Iniciando generación DOCX con IA + docxtemplater...');
+  
+  try {
+    // Obtener datos del job desde Supabase
+    const { data: job, error: jobError } = await supabase
+      .from('export_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+    
+    if (jobError || !job) {
+      throw new Error(`Error obteniendo job: ${jobError?.message || 'Job no encontrado'}`);
+    }
+    
+    console.log(`[${jobId}] Job obtenido: book_id=${job.book_id}, editor_model_id=${job.editor_model_id}`);
+    
+    // Llamar a la Edge Function generate-book-docx
+    const edgeFunctionUrl = `${SUPABASE_URL}/functions/v1/generate-book-docx`;
+    
+    const response = await axios.post(
+      edgeFunctionUrl,
+      { record: job }, // Enviar el job completo como payload
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        timeout: 300000, // 5 minutos timeout
+      }
+    );
+    
+    if (!response.data.success) {
+      throw new Error(`Edge Function error: ${response.data.error || 'Unknown error'}`);
+    }
+    
+    console.log(`[${jobId}] ✅ Edge Function completada exitosamente`);
+    console.log(`[${jobId}] Resultado:`, response.data.message);
+    
+    // La Edge Function ya actualiza el job status, pero verificamos el resultado
+    const { data: updatedJob } = await supabase
+      .from('export_jobs')
+      .select('docx_file_path, status')
+      .eq('id', jobId)
+      .single();
+    
+    if (updatedJob?.status === 'completed' && updatedJob?.docx_file_path) {
+      console.log(`[${jobId}] DOCX generado en: ${updatedJob.docx_file_path}`);
+      return updatedJob.docx_file_path;
+    } else {
+      throw new Error('Edge Function no completó correctamente la generación');
+    }
+    
+  } catch (error) {
+    console.error(`[${jobId}] ❌ Error en Edge Function:`, error.message);
+    
+    // Actualizar job como fallido
+    await updateJobStatus(jobId, `Error en generación DOCX: ${error.message}`, 'failed');
+    
+    throw new Error(`DOCX generation error: ${error.message}`);
+  }
+}
+
+/**
+ * HTTP Cloud Function que gestiona la generación de documentos DOCX.
+ * Utiliza el nuevo pipeline LLM + docxtemplater a través de la Edge Function generate-book-docx.
+ */
+functions.http('export-document', async (req, res) => {
   const { jobId, format } = req.body;
 
   if (!jobId || !format) {
-    return res.status(400).send('Missing jobId or format in request body.');
+    return res.status(400).send('Falta `jobId` o `format` en el cuerpo de la petición.');
   }
 
-  if (format !== 'pdf' && format !== 'docx') {
-    return res.status(400).send('Invalid format. Must be \"pdf\" or \"docx\".');
+  if (format !== 'docx') {
+    return res.status(400).send('Formato no válido. Actualmente solo se soporta "docx".');
   }
 
   try {
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    // 1. Obtener datos del job desde Supabase
+    await updateJobStatus(jobId, 'Job recibido. Obteniendo datos desde Supabase...');
+    const { data: job, error: jobError } = await supabase
+      .from('export_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
 
-    const getJobWithRetry = async (jobId, retries = 3, delay = 2000) => {
-      for (let i = 0; i < retries; i++) {
-        console.log(`Fetching job details, attempt ${i + 1}`);
-        const { data: job, error: jobError } = await supabase
-          .from('export_jobs')
-          .select('*')
-          .eq('id', jobId)
-          .single();
-
-        if (jobError) {
-            // Si el job no se encuentra, reintentar no ayudará.
-            throw new Error(`Job not found: ${jobError.message}`);
-        }
-        
-        // Comprobar específicamente html_url
-        if (job && job.html_url) {
-          console.log('Found job with HTML URL.');
-          return job;
-        }
-        
-        console.log(`HTML URL not found. Retrying in ${delay / 1000}s...`);
-        if (i < retries - 1) {
-          await sleep(delay);
-        }
-      }
-      throw new Error('Job has no HTML URL to process after multiple retries.');
-    };
-
-    // 1. Obtener datos del job desde Supabase (con reintentos)
-    await supabase.from('export_jobs').update({ status: 'processing', status_message: `Iniciando conversión a ${format}...` }).eq('id', jobId);
-
-    const job = await getJobWithRetry(jobId);
-
-    // 2. Descargar el HTML
-    console.log(`Downloading HTML from ${job.html_url}`);
-    const htmlResponse = await fetch(job.html_url);
-    if (!htmlResponse.ok) throw new Error(`Failed to download HTML: ${htmlResponse.statusText}`);
-    const htmlContent = await htmlResponse.text();
-
-    let fileBuffer;
-    let fileExtension;
-    let mimeType;
-
-    // 3. Convertir a PDF o DOCX
-    if (format === 'pdf') {
-      console.log('Converting to PDF...');
-      const browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-      });
-      const page = await browser.newPage();
-      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-      fileBuffer = await page.pdf({ format: 'A5', printBackground: true });
-      await browser.close();
-      fileExtension = 'pdf';
-      mimeType = 'application/pdf';
-    } else { // format === 'docx'
-      console.log('Converting to DOCX...');
-      fileBuffer = await htmlToDocx(htmlContent, null, {
-        table: { row: { cantSplit: true } },
-        footer: true,
-        pageNumber: true,
-      });
-      fileExtension = 'docx';
-      mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (jobError || !job) {
+      throw new Error(`Job no encontrado o error al obtenerlo: ${jobError?.message || 'not found'}`);
     }
 
-    // 4. Subir el archivo resultante
-    const filePath = `${job.user_id}/${job.book_id}/${job.id}.${fileExtension}`;
-    const { error: uploadError } = await supabase.storage
-      .from('exports')
-      .upload(filePath, fileBuffer, { contentType: mimeType, upsert: true });
-
-    if (uploadError) throw new Error(`Error uploading file: ${uploadError.message}`);
-
-    // 5. Actualizar el job en Supabase
-    const { data: urlData } = supabase.storage.from('exports').getPublicUrl(filePath);
+    // 2. Generar DOCX usando la nueva Edge Function (LLM + docxtemplater)
+    // Este nuevo pipeline reemplaza completamente el flujo HTML → PDF → DOCX
+    // por un sistema que genera DOCX directamente desde los datos del libro
+    const docxFilePath = await generateDocxWithEdgeFunction(jobId);
+    
+    // 3. Obtener URL pública del archivo generado
+    await updateJobStatus(jobId, 'Obteniendo URL pública del archivo...');
+    const { data: urlData } = supabase.storage.from('exports').getPublicUrl(docxFilePath);
+    
+    // 4. Actualizar el job con la URL de descarga
     await supabase.from('export_jobs').update({
-      status: 'completed',
-      status_message: 'Archivo convertido y subido con éxito.',
       download_url: urlData.publicUrl,
     }).eq('id', jobId);
 
-    console.log(`Job ${jobId} completed successfully.`);
+    console.log(`[${jobId}] ✅ Job completado con éxito.`);
     res.status(200).send({ success: true, downloadUrl: urlData.publicUrl });
 
   } catch (error) {
-    console.error(`Error processing job ${jobId}:`, error);
-    await supabase.from('export_jobs').update({
-      status: 'failed',
-      status_message: error.message,
-    }).eq('id', jobId);
+    console.error(`[${jobId}] ❌ Error procesando el job:`, error.message);
+    // Asegurarse de que el estado del job se actualice a 'failed' en caso de error
+    await updateJobStatus(jobId, `Error: ${error.message}`, 'failed');
     res.status(500).send({ success: false, error: error.message });
   }
 });

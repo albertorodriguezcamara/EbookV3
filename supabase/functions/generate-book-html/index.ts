@@ -110,13 +110,64 @@ serve(async (req)=>{
         status: "generating_css",
         status_message: "La IA está diseñando el estilo..."
       }).eq("id", job.id);
-      const systemPrompt = `
-        You are a web designer. Generate a block of CSS code for a book based on its theme.
-        The CSS should style the classes: 'body', 'page', 'page-number', 'h1', 'h2', 'h3', 'p', 'title-page', 'author', 'centered', 'toc-table', 'toc-table td'.
-        Use professional and elegant fonts, like 'Cinzel' for titles and 'Merriweather' for text.
-        You may add an optional decorative border or frame around the '.page' container if it enhances the overall aesthetic.
-        Do NOT include the <style> tags, only the raw CSS code.
-      `;
+      const systemPrompt = 
+       "You are an expert book designer specializing in creating immersive visual experiences that match the book's theme and genre.\n\n" +
+       "Generate CSS code that perfectly captures the essence of this book:\n" +
+       "- Title: " + book.title + "\n" +
+       "- Category: " + book.category + "\n" +
+       "- Subcategory: " + book.subcategory + "\n" +
+       "- Language: " + book.language + "\n\n" +
+       "DESIGN REQUIREMENTS:\n\n" +
+       "1. TYPOGRAPHY:\n" +
+       "   - Select fonts that emotionally connect with the theme (e.g., Gothic fonts for horror, elegant serifs for romance, clean sans-serif for sci-fi)\n" +
+       "   - Define font families for: titles (h1, h2, h3), body text (p), and special elements (author, page numbers)\n" +
+       "   - Include Google Fonts imports if needed\n\n" +
+       "2. COLOR PALETTE:\n" +
+       "   - Choose colors that evoke the book's atmosphere\n" +
+       "   - Define primary, secondary, and accent colors\n" +
+       "   - Consider readability with appropriate contrast ratios\n\n" +
+       "3. TEXTURES & BACKGROUNDS:\n" +
+       "   - Add subtle background textures or patterns that enhance the theme (e.g., parchment for historical, stars for sci-fi, floral for romance)\n" +
+       "   - Use CSS gradients, patterns, or background images (base64 encoded or from reliable CDNs)\n" +
+       "   - Ensure textures don't interfere with text readability\n\n" +
+       "4. DECORATIVE ELEMENTS:\n" +
+       "   - Add thematic borders, frames, or ornaments to .page elements\n" +
+       "   - Include decorative dividers between chapters if appropriate\n" +
+       "   - Consider drop caps for chapter beginnings\n\n" +
+       "5. LAYOUT ENHANCEMENTS:\n" +
+       "   - Style page margins and spacing to create comfortable reading\n" +
+       "   - Add subtle shadows or effects for depth\n" +
+       "   - Consider special styling for title pages and chapter headers\n\n" +
+       "CLASSES TO STYLE:\n" +
+       "- body: Overall document styling\n" +
+       "- .page: Individual page container (consider decorative borders)\n" +
+       "- .page-number: Page numbering style\n" +
+       "- h1, h2, h3: Heading hierarchy\n" +
+       "- p: Paragraph styling with appropriate line-height\n" +
+       "- .title-page: Special styling for the book's title page\n" +
+       "- .author: Author name styling\n" +
+       "- .centered: Centered content\n" +
+       "- .toc-table, .toc-table td: Table of contents styling\n" +
+       "- .chapter-start: First paragraph of each chapter (for drop caps)\n" +
+       "- .divider: Decorative section dividers\n\n" +
+       "OUTPUT: Raw CSS code only, no HTML tags or style tags. Make it production-ready and ensure cross-browser compatibility.\n\n" +
+       "EXAMPLE THEMES:\n" +
+       "- Fantasy: Celtic fonts, earth tones, dragon scale textures, ornate borders\n" +
+       "- Sci-Fi: Futuristic fonts, neon accents, circuit patterns, holographic effects\n" +
+       "- Romance: Script fonts, soft pastels, floral patterns, elegant frames\n" +
+       "- Horror: Distressed fonts, dark colors, cracked textures, blood splatter accents\n" +
+       "- Children's: Playful fonts, bright colors, cartoon patterns, rounded borders\n\n" +
+       "Be creative but maintain professional standards and readability.";
+
+      const docxCompatiblePrompt = 
+       "You are an expert book designer specializing in creating CSS that works perfectly with Microsoft Word/DOCX export.\n\n" +
+       "Generate CSS code for this book that is DOCX-COMPATIBLE:\n" +
+       "- Title: " + book.title + "\n" +
+       "- Category: " + book.category + "\n" +
+       "- Subcategory: " + book.subcategory + "\n" +
+       "- Language: " + book.language + "\n\n" +
+       
+      const promptToUse = job.export_format === 'docx' ? docxCompatiblePrompt : systemPrompt;
       const userPrompt = `
         Generate the CSS for a book with the following properties:
         - Category: ${book.category}
@@ -135,14 +186,14 @@ serve(async (req)=>{
         messages: [
           {
             role: "system" as const,
-            content: systemPrompt
+            content: promptToUse
           },
           {
             role: "user" as const,
             content: userPrompt
           }
         ],
-        max_tokens: 1500,
+        max_tokens: 64000, // Aumentado para evitar respuestas truncadas
         temperature: 0.3
       };
       const aiResponse = await callAI(aiRequest);
@@ -201,7 +252,7 @@ serve(async (req)=>{
           },
           body: JSON.stringify({
             jobId: job.id,
-            format: 'pdf', // Or determine format from job payload
+            format: 'docx', // Cambiado a DOCX temporalmente
           }),
         }).catch(console.error); // Log any error during the fetch call itself
       }

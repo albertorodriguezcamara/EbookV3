@@ -5,6 +5,41 @@ import { supabase } from '../lib/supabase'
 import { BookOpen, Calendar, Tag, FileText, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
+// Constantes para los tamaños KDP
+const KDP_PAPERBACK_SIZES = [
+  '12,7 x 20,32 cm (5" x 8")',
+  '12,85 x 19,84 cm (5,06" x 7,81")',
+  '13,34 x 20,32 cm (5,25" x 8")',
+  '13,97 x 21,59 cm (5,5" x 8,5")',
+  '15,24 x 22,86 cm (6" x 9")', // Más popular
+  '15,6 x 23,39 cm (6,14" x 9,21")',
+  '16,99 x 24,41 cm (6,69" x 9,61")',
+  '17,78 x 25,4 cm (7" x 10")',
+  '18,9 x 24,61 cm (7,44" x 9,69")',
+  '19,05 x 23,5 cm (7,5" x 9,25")',
+  '20,32 x 25,4 cm (8" x 10")',
+  '20,96 x 15,24 cm (8,25" x 6")',
+  '20,96 x 20,96 cm (8,25" x 8,25")',
+  '21,59 x 21,59 cm (8,5" x 8,5")',
+  '21,59 x 27,94 cm (8,5" x 11")',
+  '21 x 29,7 cm (8,27" x 11,69")'
+];
+
+const KDP_HARDCOVER_SIZES = [
+  '13,97 x 21,59 cm (5,5" x 8,5")',
+  '15,24 x 22,86 cm (6" x 9")', // Más popular
+  '15,6 x 23,39 cm (6,14" x 9,21")',
+  '17,78 x 25,4 cm (7" x 10")',
+  '20,96 x 27,94 cm (8,25" x 11")'
+];
+
+const INK_TYPES = {
+  black_white: 'Tinta negra y papel blanco',
+  black_cream: 'Tinta negra y papel crema',
+  color_standard: 'Tinta de color estándar y papel blanco',
+  color_premium: 'Tinta de color prémium y papel blanco'
+};
+
 interface Book {
   id: string
   title: string
@@ -29,6 +64,16 @@ interface Chapter {
   created_at: string
 }
 
+interface ExportJob {
+  id: string
+  status: string
+  format: string
+  download_url: string | null
+  created_at: string
+  export_options: any
+  editor_model_id: string | null
+}
+
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -47,6 +92,12 @@ export default function BookDetail() {
   const [isbn, setIsbn] = useState('');
   const [aiModels, setAiModels] = useState<any[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  
+  // State for KDP format selection
+  const [kdpFormatType, setKdpFormatType] = useState<'paperback' | 'hardcover'>('paperback');
+  const [kdpFormatSize, setKdpFormatSize] = useState('15,24 x 22,86 cm (6" x 9")');
+  const [kdpInkType, setKdpInkType] = useState<'black_white' | 'black_cream' | 'color_standard' | 'color_premium'>('black_white');
+  const [kdpPaperType, setKdpPaperType] = useState<'white' | 'cream'>('white');
 
   // State for export process
   const [exporting, setExporting] = useState(false);
@@ -54,6 +105,10 @@ export default function BookDetail() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+
+  // State for export history
+  const [exportHistory, setExportHistory] = useState<ExportJob[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -63,44 +118,185 @@ export default function BookDetail() {
 
     if (id) {
       fetchBookDetails()
+      fetchExportHistory()
     }
   }, [user, id, navigate])
 
-  // Effect for Realtime subscription
+  // Effect for Realtime subscription + Polling fallback
   useEffect(() => {
     if (!jobId) return;
 
+    console.log(`🔌 Configurando WebSocket para job: ${jobId}`);
+    
+    // Polling fallback - verificar estado cada 3 segundos
+    const pollJobStatus = async () => {
+      try {
+        const { data: job, error } = await supabase
+          .from('export_jobs')
+          .select('status, download_url, status_message')
+          .eq('id', jobId)
+          .single();
+        
+        if (error) {
+          console.error('❌ Error en polling:', error);
+          return;
+        }
+        
+        if (job) {
+          console.log('🔄 Polling - Job status:', job.status);
+          
+          // Actualizar estado
+          setExportStatus(job.status_message || `Estado: ${job.status}`);
+          
+          if (job.status === 'completed' && job.download_url) {
+            console.log('✅ Polling detectó job completado!');
+            handleJobCompleted(job.download_url);
+            return true; // Job completado, detener polling
+          }
+          
+          if (job.status === 'failed') {
+            console.log('❌ Polling detectó job fallido');
+            setExportError(job.status_message || 'Error en la exportación');
+            setExporting(false);
+            setJobId(null);
+            return true; // Job fallido, detener polling
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error en polling:', error);
+      }
+      return false; // Continuar polling
+    };
+    
+    // Función para manejar job completado
+    const handleJobCompleted = (downloadUrl: string) => {
+      console.log('🔗 URL de descarga disponible, iniciando descarga automática...');
+      setExportUrl(downloadUrl);
+      setExportStatus('¡Tu libro DOCX está listo! Descargando automáticamente...');
+      
+      // Descargar automáticamente el archivo
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `${book?.title || 'libro'}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Actualizar estado final
+      setTimeout(() => {
+        console.log('🔄 Reseteando estado del botón de exportación...');
+        setExportStatus('¡Descarga completada! Tu libro DOCX ha sido descargado.');
+        setExporting(false);
+        console.log('🔴 setExporting(false) ejecutado');
+        fetchExportHistory();
+        
+        setTimeout(() => {
+          console.log('🧹 Limpiando estado completo...');
+          setExportStatus(null);
+          setExportError(null);
+          setExportUrl(null);
+          setJobId(null);
+        }, 3000);
+      }, 1000);
+    };
+    
+    // Iniciar polling inmediatamente y luego cada 3 segundos
+    const pollingInterval = setInterval(async () => {
+      const completed = await pollJobStatus();
+      if (completed) {
+        clearInterval(pollingInterval);
+      }
+    }, 3000);
+    
+    // Polling inicial inmediato
+    pollJobStatus().then(completed => {
+      if (completed) {
+        clearInterval(pollingInterval);
+      }
+    });
+    
     const channel: RealtimeChannel = supabase
       .channel(`export-job-${jobId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'export_jobs', filter: `id=eq.${jobId}` },
         (payload) => {
-          console.log('Payload recibido de Realtime:', payload);
+          console.log('📡 Payload recibido de Realtime:', payload);
+          console.log('📊 Estado actual del botón - exporting:', exporting);
           const updatedJob = payload.new as { status: string; download_url: string | null; status_message: string };
+          console.log('🔄 Job actualizado:', {
+            status: updatedJob.status,
+            download_url: updatedJob.download_url ? 'SÍ' : 'NO',
+            status_message: updatedJob.status_message
+          });
+          
+          // Si WebSocket funciona, detener polling
+          clearInterval(pollingInterval);
+          
+          // Actualizar el mensaje de estado
           setExportStatus(updatedJob.status_message || `Estado: ${updatedJob.status}`);
 
-          if (updatedJob.status === 'completed' || updatedJob.status === 'html_generated') {
+          if (updatedJob.status === 'completed') {
+            console.log('✅ Job completado detectado por WebSocket!');
             if (updatedJob.download_url) {
-              setExportUrl(updatedJob.download_url);
-              setExportStatus('¡Tu libro está listo! Puedes descargarlo.');
+              handleJobCompleted(updatedJob.download_url);
+            } else {
+              setExportError('El archivo se generó pero no se pudo obtener la URL de descarga.');
               setExporting(false);
-              channel.unsubscribe();
             }
+            channel.unsubscribe();
           } else if (updatedJob.status === 'failed') {
             setExportError(`La exportación ha fallado: ${updatedJob.status_message}`);
             setExporting(false);
+            setJobId(null);
             channel.unsubscribe();
+          } else if (updatedJob.status === 'processing' || updatedJob.status === 'generating_pdf') {
+            setExportStatus(updatedJob.status_message || 'Procesando...');
           }
         }
       )
-      .subscribe((status, err) => {
+      .subscribe(async (status, err) => {
         if (status === 'SUBSCRIBED') {
           console.log(`Suscrito a las actualizaciones del trabajo de exportación: ${jobId}`);
         } else if (err) {
           console.error('Error en la suscripción a Realtime:', err);
-          setExportError('Error de conexión para monitorizar el progreso.');
-          setExporting(false);
+          
+          // Verificar si es un error de token expirado
+          if (err.message && err.message.includes('Token has expired')) {
+            console.log('🔄 Token expirado detectado, intentando renovar sesión...');
+            
+            try {
+              // Intentar renovar la sesión
+              const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
+              
+              if (refreshError) {
+                console.error('Error renovando sesión:', refreshError);
+                setExportError('Sesión expirada. Por favor, recarga la página e inicia sesión nuevamente.');
+                setExporting(false);
+                return;
+              }
+              
+              if (session) {
+                console.log('✅ Sesión renovada exitosamente, reintentando suscripción...');
+                
+                // Limpiar el canal actual
+                channel.unsubscribe();
+                
+                // Reintentar la suscripción después de un breve delay
+                setTimeout(() => {
+                  // Reiniciar el proceso de suscripción
+                  window.location.reload(); // Solución temporal para reiniciar completamente
+                }, 1000);
+                
+                return;
+              }
+            } catch (refreshError) {
+              console.error('Error durante la renovación de sesión:', refreshError);
+            }
+          }
+          
+          setExportError('Error de conexión para monitorizar el progreso. Usando polling como respaldo.');
+          // No detener la exportación, el polling seguirá funcionando
         }
       });
 
@@ -116,12 +312,19 @@ export default function BookDetail() {
     const fetchAiModels = async () => {
       const { data, error } = await supabase
         .from('ai_models')
-        .select('id, name');
+        .select('id, name, display_name, description')
+        .eq('type', 'editor')
+        .eq('active', true)
+        .order('display_name');
       
       if (error) {
         console.error('Error fetching AI models:', error);
       } else {
         setAiModels(data || []);
+        // Seleccionar el primer modelo por defecto si hay modelos disponibles
+        if (data && data.length > 0 && !selectedModelId) {
+          setSelectedModelId(data[0].id);
+        }
       }
     };
 
@@ -129,6 +332,30 @@ export default function BookDetail() {
   }, []);
 
   const maxRetries = 10;
+  
+  const fetchExportHistory = async () => {
+    if (!id || !user?.id) return;
+    
+    setLoadingHistory(true);
+    try {
+      // TEMPORAL: Mostrar TODAS las exportaciones para diagnosticar el problema
+      const { data, error } = await supabase
+        .from('export_jobs')
+        .select('*')
+        .eq('book_id', id)
+        .eq('user_id', user.id)
+        // .eq('status', 'completed')  // ❌ COMENTADO TEMPORALMENTE
+        // .not('download_url', 'is', null)  // ❌ COMENTADO TEMPORALMENTE
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setExportHistory(data || []);
+    } catch (error: any) {
+      console.error('Error al obtener historial de exportaciones:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
   
   const fetchBookDetails = async (retry = 0) => {
     try {
@@ -176,6 +403,11 @@ export default function BookDetail() {
     setDedication('');
     setAcknowledgements('');
     setIsbn('');
+    // Resetear valores KDP a los por defecto
+    setKdpFormatType('paperback');
+    setKdpFormatSize('15,24 x 22,86 cm (6" x 9")');
+    setKdpInkType('black_white');
+    setKdpPaperType('white');
     setIsExportModalOpen(true);
   };
 
@@ -196,13 +428,17 @@ export default function BookDetail() {
       dedication: dedication || undefined,
       acknowledgements: acknowledgements || undefined,
       isbn: isbn || undefined,
+      kdp_format_type: kdpFormatType,
+      kdp_format_size: kdpFormatSize,
+      kdp_ink_type: kdpInkType,
+      kdp_paper_type: kdpPaperType,
     };
 
     try {
       const { data, error } = await supabase.functions.invoke('handle-export-request', {
         body: {
           book_id: id,
-          format: 'pdf',
+          format: 'docx', // Cambiado a DOCX
           color_scheme: 'standard',
           export_options: exportOptions,
           editor_model_id: selectedModelId || undefined,
@@ -213,7 +449,7 @@ export default function BookDetail() {
 
       if (data.job_id) {
         setJobId(data.job_id);
-        setExportStatus('Trabajo de exportación creado. Esperando la generación del fichero...');
+        setExportStatus('Trabajo de exportación creado. Generando DOCX con IA + docxtemplater...');
       } else {
         throw new Error('No se recibió un ID de trabajo del servidor.');
       }
@@ -373,17 +609,19 @@ export default function BookDetail() {
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span>Capítulos generados</span>
-                    <span>{chapters.length}/{book.extension}</span>
+                    <span>{chapters.length}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-indigo-600 h-2 rounded-full"
-                      style={{ width: `${(chapters.length / book.extension) * 100}%` }}
+                      className="bg-green-600 h-2 rounded-full"
+                      style={{ width: chapters.length > 0 ? '100%' : '0%' }}
                     ></div>
                   </div>
                 </div>
                 <div className="text-sm text-gray-600">
-                  Estado: <span className="font-medium">En progreso</span>
+                  Estado: <span className="font-medium text-green-600">
+                    {chapters.length > 0 ? 'Completado' : 'En progreso'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -425,12 +663,106 @@ export default function BookDetail() {
         </div>
       </div>
 
-      {isExportModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">Opciones de Exportación</h2>
-            
+      {/* Export History Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Historial de Exportaciones</h2>
+          
+          {loadingHistory ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              <span className="ml-2 text-gray-600">Cargando historial...</span>
+            </div>
+          ) : exportHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No hay exportaciones</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Aún no has exportado este libro. Haz clic en "Exportar" para crear tu primera versión DOCX.
+              </p>
+            </div>
+          ) : (
             <div className="space-y-4">
+              {exportHistory.map((exportJob) => {
+                const getStatusColor = (status: string) => {
+                  switch (status) {
+                    case 'completed': return 'bg-green-100 text-green-800';
+                    case 'processing': return 'bg-blue-100 text-blue-800';
+                    case 'pending': return 'bg-yellow-100 text-yellow-800';
+                    case 'failed': return 'bg-red-100 text-red-800';
+                    default: return 'bg-gray-100 text-gray-800';
+                  }
+                };
+                
+                const getStatusLabel = (status: string) => {
+                  switch (status) {
+                    case 'completed': return 'Completado';
+                    case 'processing': return 'Procesando';
+                    case 'pending': return 'Pendiente';
+                    case 'failed': return 'Fallido';
+                    default: return status;
+                  }
+                };
+                
+                return (
+                  <div key={exportJob.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <FileText className="h-5 w-5 text-indigo-600" />
+                        <span className="font-medium text-gray-900">Exportación DOCX</span>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(exportJob.status)}`}>
+                          {getStatusLabel(exportJob.status)}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(exportJob.created_at).toLocaleString('es-ES')}
+                      </span>
+                    </div>
+                    
+                    <div className="mt-3 flex justify-end">
+                      {exportJob.download_url ? (
+                        <button
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = exportJob.download_url!;
+                            link.download = `${book?.title || 'libro'}.docx`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
+                        >
+                          Descargar
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400">
+                          {exportJob.status === 'pending' && 'Esperando procesamiento...'}
+                          {exportJob.status === 'processing' && 'Generando documento...'}
+                          {exportJob.status === 'failed' && 'Error en la exportación'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-8 py-6 rounded-t-xl">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                <FileText className="mr-3 text-indigo-600" size={28} />
+                Exportar a Word (DOCX)
+              </h2>
+              <p className="text-gray-600 mt-2">Configura las opciones de tu libro para Amazon KDP</p>
+            </div>
+            
+            <div className="px-8 py-6">
+              <div className="space-y-6">
               <div>
                 <label htmlFor="dedication" className="block text-sm font-medium text-gray-700">Dedicatoria (Opcional)</label>
                 <textarea
@@ -467,41 +799,206 @@ export default function BookDetail() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="ai-model" className="block text-sm font-medium text-gray-300">Maquetador IA (Opcional)</label>
-                <select
-                  id="ai-model"
-                  value={selectedModelId || ''}
-                  onChange={(e) => setSelectedModelId(e.target.value || null)}
-                  className="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                >
-                  <option value="">Usar el editor por defecto del libro</option>
-                  {aiModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs text-gray-400">
-                  Selecciona una IA para generar el diseño del libro. Si no eliges ninguna, se usará la configurada en los ajustes del libro.
-                </p>
-              </div>
-            </div>
+              {/* Sección de Formato KDP */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Formato Amazon KDP</h3>
+                
+                {/* Tipo de libro */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de libro</label>
+                  <div className="flex space-x-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="paperback"
+                        checked={kdpFormatType === 'paperback'}
+                        onChange={(e) => {
+                          setKdpFormatType(e.target.value as 'paperback' | 'hardcover');
+                          // Resetear tamaño al cambiar tipo
+                          if (e.target.value === 'paperback') {
+                            setKdpFormatSize('15,24 x 22,86 cm (6" x 9")');
+                          } else {
+                            setKdpFormatSize('15,24 x 22,86 cm (6" x 9")');
+                          }
+                        }}
+                        className="mr-2 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">Tapa blanda</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="hardcover"
+                        checked={kdpFormatType === 'hardcover'}
+                        onChange={(e) => {
+                          setKdpFormatType(e.target.value as 'paperback' | 'hardcover');
+                          if (e.target.value === 'hardcover') {
+                            setKdpFormatSize('15,24 x 22,86 cm (6" x 9")');
+                          }
+                        }}
+                        className="mr-2 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-700">Tapa dura</span>
+                    </label>
+                  </div>
+                </div>
 
-            <div className="mt-8 flex justify-end space-x-4">
-              <button
-                onClick={handleCancelExport}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md text-sm font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmExport}
-                disabled={exporting}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:bg-indigo-400 disabled:cursor-not-allowed"
-              >
-                {exporting ? 'Iniciando...' : 'Confirmar y Exportar'}
-              </button>
+                {/* Tamaño del libro */}
+                <div className="mb-4">
+                  <label htmlFor="kdp-size" className="block text-sm font-medium text-gray-700">Tamaño de impresión</label>
+                  <select
+                    id="kdp-size"
+                    value={kdpFormatSize}
+                    onChange={(e) => setKdpFormatSize(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    {(kdpFormatType === 'paperback' ? KDP_PAPERBACK_SIZES : KDP_HARDCOVER_SIZES).map((size) => (
+                      <option key={size} value={size}>
+                        {size} {size === '15,24 x 22,86 cm (6" x 9")' ? '(Recomendado)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    El tamaño 6" x 9" es el más popular para la mayoría de libros.
+                  </p>
+                </div>
+
+                {/* Tipo de tinta y papel */}
+                <div className="mb-4">
+                  <label htmlFor="kdp-ink" className="block text-sm font-medium text-gray-700">Tipo de tinta y papel</label>
+                  <select
+                    id="kdp-ink"
+                    value={kdpInkType}
+                    onChange={(e) => {
+                      const inkType = e.target.value as 'black_white' | 'black_cream' | 'color_standard' | 'color_premium';
+                      setKdpInkType(inkType);
+                      // Actualizar tipo de papel automáticamente
+                      if (inkType === 'black_cream') {
+                        setKdpPaperType('cream');
+                      } else {
+                        setKdpPaperType('white');
+                      }
+                    }}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    {Object.entries(INK_TYPES).map(([key, label]) => {
+                      // Filtrar opciones para tapa dura
+                      if (kdpFormatType === 'hardcover' && (key === 'color_standard' || key === 'color_premium')) {
+                        return null;
+                      }
+                      return (
+                        <option key={key} value={key}>
+                          {label} {key === 'black_white' ? '(Más económico)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {kdpInkType === 'black_white' && 'Opción más económica para libros sin imágenes en color.'}
+                    {kdpInkType === 'black_cream' && 'Papel crema da un aspecto más clásico y es menos cansado para la vista.'}
+                    {kdpInkType.startsWith('color') && 'Para libros con imágenes, gráficos o elementos en color.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Sección de Maquetador IA */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                  <span className="bg-indigo-100 text-indigo-800 p-2 rounded-lg mr-3">
+                    🤖
+                  </span>
+                  Maquetador IA
+                </h3>
+                
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <label htmlFor="ai-model" className="block text-sm font-medium text-gray-700 mb-3">
+                    Selecciona el modelo de IA para maquetar tu libro
+                  </label>
+                  
+                  {aiModels.length === 0 ? (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500 text-sm">Cargando modelos disponibles...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Opción por defecto */}
+                      <label className="flex items-start p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input
+                          type="radio"
+                          name="ai-model"
+                          value=""
+                          checked={!selectedModelId}
+                          onChange={() => setSelectedModelId(null)}
+                          className="mt-1 mr-3 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">Editor por defecto del libro</div>
+                          <div className="text-sm text-gray-500 mt-1">
+                            Utiliza la configuración de IA establecida en los ajustes del libro
+                          </div>
+                        </div>
+                      </label>
+                      
+                      {/* Modelos disponibles */}
+                      {aiModels.map((model) => (
+                        <label key={model.id} className="flex items-start p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                          <input
+                            type="radio"
+                            name="ai-model"
+                            value={model.id}
+                            checked={selectedModelId === model.id}
+                            onChange={() => setSelectedModelId(model.id)}
+                            className="mt-1 mr-3 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-900">{model.display_name || model.name}</div>
+                            {model.description && (
+                              <div className="text-sm text-gray-500 mt-1">{model.description}</div>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      💡 <strong>Consejo:</strong> Los diferentes modelos de IA pueden generar estilos únicos. 
+                      Experimenta con diferentes opciones para encontrar el que mejor se adapte a tu libro.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              </div>
+              
+              {/* Botones de acción */}
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-8 py-6 rounded-b-xl">
+                <div className="flex justify-end space-x-4">
+                  <button
+                    onClick={handleCancelExport}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-6 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleConfirmExport}
+                    disabled={exporting}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-6 rounded-lg text-sm font-medium disabled:bg-indigo-400 disabled:cursor-not-allowed transition-colors flex items-center"
+                  >
+                    {exporting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Iniciando exportación...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="mr-2" size={16} />
+                        Confirmar y Exportar
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

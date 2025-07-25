@@ -1,0 +1,140 @@
+const functions = require('@google-cloud/functions-framework');
+const { createClient } = require('@supabase/supabase-js');
+const axios = require('axios');
+
+// Cargar variables de entorno
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CLOUDMERSIVE_API_KEY = process.env.CLOUDMERSIVE_API_KEY; // ¡NUEVO!
+
+// Inicializar cliente de Supabase
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+/**
+ * Registra un mensaje de log y actualiza el estado del job en Supabase.
+ * @param {string} jobId - El ID del job.
+ * @param {string} message - El mensaje a registrar.
+ * @param {'processing' | 'failed' | 'completed'} [status] - El nuevo estado del job.
+ */
+async function updateJobStatus(jobId, message, status = 'processing') {
+  console.log(`[${jobId}] ${message}`);
+  try {
+    await supabase.from('export_jobs').update({ status, status_message: message }).eq('id', jobId);
+  } catch (error) {
+    console.error(`[${jobId}] Failed to update job status in Supabase:`, error.message);
+  }
+}
+
+/**
+ * Convierte contenido HTML a un documento DOCX usando la API de Cloudmersive.
+ * @param {string} htmlContent - El contenido HTML a convertir.
+ * @param {string} jobId - El ID del job para logging.
+ * @returns {Promise<Buffer>} - Una promesa que se resuelve con el buffer del archivo DOCX.
+ */
+async function convertHtmlToDocxWithCloudmersive(htmlContent, jobId) {
+  if (!CLOUDMERSIVE_API_KEY) {
+    throw new Error('CLOUDMERSIVE_API_KEY environment variable not set.');
+  }
+
+  await updateJobStatus(jobId, 'Iniciando conversión a DOCX con Cloudmersive...');
+
+  try {
+    const response = await axios.post(
+      'https://api.cloudmersive.com/convert/web/html/to/docx',
+      { Html: htmlContent },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Apikey': CLOUDMERSIVE_API_KEY,
+        },
+        responseType: 'arraybuffer', // Importante para recibir el archivo como buffer
+      }
+    );
+
+    await updateJobStatus(jobId, 'Conversión con Cloudmersive completada con éxito.');
+    return response.data;
+  } catch (error) {
+    const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+    console.error(`[${jobId}] ❌ Error en la API de Cloudmersive:`, errorMessage);
+    throw new Error(`Cloudmersive API error: ${errorMessage}`);
+  }
+}
+
+/**
+ * HTTP Cloud Function que gestiona la conversión de HTML a DOCX.
+ */
+functions.http('export-document', async (req, res) => {
+  const { jobId, format } = req.body;
+
+  if (!jobId || !format) {
+    return res.status(400).send('Falta `jobId` o `format` en el cuerpo de la petición.');
+  }
+
+  if (format !== 'docx') {
+    return res.status(400).send('Formato no válido. Actualmente solo se soporta "docx".');
+  }
+
+  try {
+    // 1. Obtener datos del job desde Supabase
+    await updateJobStatus(jobId, 'Job recibido. Obteniendo datos desde Supabase...');
+    const { data: job, error: jobError } = await supabase
+      .from('export_jobs')
+      .select('*')
+      .eq('id', jobId)
+      .single();
+
+    if (jobError || !job) {
+      throw new Error(`Job no encontrado o error al obtenerlo: ${jobError?.message || 'not found'}`);
+    }
+
+    // 2. Obtener el contenido HTML desde Supabase Storage
+    await updateJobStatus(jobId, 'Descargando contenido HTML desde el almacenamiento...');
+    const { data: htmlBlob, error: downloadError } = await supabase.storage
+      .from('exports')
+      .download(job.html_file_path);
+
+    if (downloadError) {
+      throw new Error(`Error al descargar el archivo HTML: ${downloadError.message}`);
+    }
+
+    const htmlContent = await htmlBlob.text();
+    await updateJobStatus(jobId, `HTML descargado (${(htmlContent.length / 1024).toFixed(2)} KB).`);
+
+    // 3. Convertir HTML a DOCX usando Cloudmersive
+    const docxBuffer = await convertHtmlToDocxWithCloudmersive(htmlContent, jobId);
+    await updateJobStatus(jobId, `DOCX generado (${(docxBuffer.length / 1024).toFixed(2)} KB).`);
+
+    // 4. Subir el archivo DOCX resultante a Supabase Storage
+    await updateJobStatus(jobId, 'Subiendo archivo DOCX al almacenamiento...');
+    const docxFilePath = `${job.user_id}/${job.book_id}/${job.id}.docx`;
+    const { error: uploadError } = await supabase.storage
+      .from('exports')
+      .upload(docxFilePath, docxBuffer, {
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`Error al subir el archivo DOCX: ${uploadError.message}`);
+    }
+
+    // 5. Actualizar el job en Supabase con el estado final y la URL de descarga
+    await updateJobStatus(jobId, 'Obteniendo URL pública del archivo...');
+    const { data: urlData } = supabase.storage.from('exports').getPublicUrl(docxFilePath);
+    
+    await supabase.from('export_jobs').update({
+      status: 'completed',
+      status_message: 'Archivo convertido y subido con éxito.',
+      download_url: urlData.publicUrl,
+    }).eq('id', jobId);
+
+    console.log(`[${jobId}] ✅ Job completado con éxito.`);
+    res.status(200).send({ success: true, downloadUrl: urlData.publicUrl });
+
+  } catch (error) {
+    console.error(`[${jobId}] ❌ Error procesando el job:`, error.message);
+    // Asegurarse de que el estado del job se actualice a 'failed' en caso de error
+    await updateJobStatus(jobId, `Error: ${error.message}`, 'failed');
+    res.status(500).send({ success: false, error: error.message });
+  }
+});
