@@ -35,7 +35,7 @@ gcloud functions deploy %FUNCTION_NAME% ^
   --memory=%MEMORY% ^
   --cpu=1 ^
   --timeout=%TIMEOUT% ^
-  --set-env-vars="SUPABASE_URL=%SUPABASE_URL%,SUPABASE_SERVICE_ROLE_KEY=%SUPABASE_KEY%,CLOUDMERSIVE_API_KEY=77b66464-cb37-4352-b045-98f144620096"
+  --set-env-vars="SUPABASE_URL=https://ydorhokujupnxpyrxczv.supabase.co,SUPABASE_SERVICE_ROLE_KEY=%SUPABASE_KEY%,CLOUDMERSIVE_API_KEY=77b66464-cb37-4352-b045-98f144620096"
 
 if %ERRORLEVEL% EQU 0 (
     echo.

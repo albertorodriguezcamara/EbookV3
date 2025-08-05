@@ -10,6 +10,6 @@ ADD COLUMN kdp_paper_type VARCHAR(20);  -- Ej: "white", "cream"
 
 -- Comentarios sobre los valores esperados:
 -- kdp_format_size: Tamaño físico del libro según KDP
--- kdp_format_type: "paperback" (tapa blanda) o "hardcover" (tapa dura)
+-- kdp_format_type: "paperback" (tapa blaanda) o "hardcover" (tapa dura)
 -- kdp_ink_type: "black_white", "black_cream", "color_standard", "color_premium"
 -- kdp_paper_type: "white", "cream"
