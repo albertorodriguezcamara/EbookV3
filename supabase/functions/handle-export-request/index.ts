@@ -91,13 +91,27 @@ Deno.serve(async (req) => {
       status: job.status
     });
     
-    supabase.functions.invoke('generate-book-docx', { 
-      body: { record: job }
-    }).then((response) => {
-      console.log(`✅ [${job.id}] Función generate-book-docx invocada exitosamente:`, response);
+    // Llamar a la función migrada en Google Cloud Functions
+    const googleCloudUrl = 'https://europe-west1-export-document-project.cloudfunctions.net/generate-book-docx';
+    
+    fetch(googleCloudUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+      },
+      body: JSON.stringify({ record: job })
+    }).then(async (response) => {
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ [${job.id}] Función generate-book-docx (Google Cloud) invocada exitosamente:`, result);
+      } else {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
     }).catch(async (invokeError) => {
       // Log the error and update job status
-      console.error('Failed to invoke generate-book-docx function:', invokeError);
+      console.error('Failed to invoke generate-book-docx function (Google Cloud):', invokeError);
       
       // Update job status to failed
       try {

@@ -52,10 +52,11 @@ async function generateDocxWithEdgeFunction(jobId) {
     console.log(`[${jobId}] Job obtenido: book_id=${job.book_id}, editor_model_id=${job.editor_model_id}`);
     
     // Llamar a la Edge Function generate-book-docx
-    const edgeFunctionUrl = `${SUPABASE_URL}/functions/v1/generate-book-docx`;
+    // Usar la función migrada en Google Cloud Functions
+    const googleCloudUrl = 'https://europe-west1-export-document-project.cloudfunctions.net/generate-book-docx';
     
     const response = await axios.post(
-      edgeFunctionUrl,
+      googleCloudUrl,
       { record: job }, // Enviar el job completo como payload
       {
         headers: {

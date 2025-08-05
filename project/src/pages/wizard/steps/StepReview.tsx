@@ -124,10 +124,16 @@ const StepReview: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const ai_config: { [key: string]: string | null } = {
+      const ai_config = {
+        // IDs de modelos (para compatibilidad)
         writer_model_id: state.agentConfig.writer?.modelId || null,
         editor_model_id: state.agentConfig.editor?.modelId || null,
         image_generator_model_id: state.details.generate_cover ? state.agentConfig.cover?.modelId || null : null,
+        // Configuración completa de agentConfig (incluye thinkingBudget)
+        writer: state.agentConfig.writer || null,
+        editor: state.agentConfig.editor || null,
+        image: state.agentConfig.image || null,
+        cover: state.details.generate_cover ? state.agentConfig.cover || null : null,
       };
 
       const { provisional_title, author, idea, language, target_word_count, target_number_of_chapters, generate_cover, ...otherDetails } = state.details;
@@ -156,7 +162,8 @@ const StepReview: React.FC = () => {
       if (data && data.request_id) {
         reset();
         dispatch({ type: 'SET_REQUEST_ID', payload: data.request_id });
-        navigate(`/creating-book/${data.request_id}`);
+        // ✅ Navegar a la vista de monitoreo usando request_id
+        navigate(`/book-creation/${data.request_id}`);
       } else {
         throw new Error('La respuesta no incluyó un ID de solicitud.');
       }

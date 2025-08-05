@@ -56,20 +56,53 @@ export default function CreateBook() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase
-        .from('books')
-        .insert([
-          {
-            ...formData,
-            user_id: user?.id
-          }
-        ])
-        .select()
-        .single()
+      // ✅ USAR FLUJO NUEVO: handle-book-creation-request en lugar de inserción directa
+      console.log('Iniciando creación de libro con flujo nuevo...')
+      
+      // Preparar payload para el nuevo flujo
+      const bookPayload = {
+        title: formData.title,
+        author: formData.author,
+        idea: formData.idea,
+        language: formData.language,
+        category_id: formData.category, // Asumiendo que category contiene el ID
+        subcategory_id: null, // Ajustar según sea necesario
+        target_word_count: 1000, // Valor por defecto, ajustar según sea necesario
+        target_number_of_chapters: formData.extension,
+        book_attributes: {
+          tone: formData.tone,
+          book_size: formData.book_size,
+          description: formData.description
+        },
+        ai_config: {
+          writer_model_id: 'default-writer-model-id', // Ajustar con modelo real
+          editor_model_id: 'default-editor-model-id', // Ajustar con modelo real
+          image_generator_model_id: null
+        }
+      }
 
-      if (error) throw error
+      // Llamar al nuevo flujo a través de Edge Function
+      const { data, error } = await supabase.functions.invoke(
+        'handle-book-creation-request',
+        {
+          body: bookPayload
+        }
+      )
 
-      navigate(`/book/${data.id}`)
+      if (error) {
+        console.error('Error en handle-book-creation-request:', error)
+        throw error
+      }
+
+      console.log('Libro creado exitosamente:', data)
+      
+      // Redirigir al libro creado (necesitarás obtener el book_id de la respuesta)
+      if (data?.book_id) {
+        navigate(`/book/${data.book_id}`)
+      } else {
+        // Fallback: redirigir al dashboard si no tenemos book_id
+        navigate('/dashboard')
+      }
     } catch (error) {
       console.error('Error creating book:', error)
       alert('Error al crear el libro. Por favor, inténtalo de nuevo.')

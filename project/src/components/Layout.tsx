@@ -37,6 +37,7 @@ export default function Layout({ children }: LayoutProps) {
                 {isAdmin && (
                   <Link to="/admin" className="nav-link">Admin</Link>
                 )}
+                <Link to="/ai-creator" className="nav-link">🤖 IA Creator</Link>
                 <Link to="/create-book/step/1" className="nav-button">Crear Ebook</Link>
                 
                 <div className="user-info">

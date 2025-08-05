@@ -27,6 +27,25 @@ interface BookCreationDataFromRequest {
     writer_model_id: string;
     editor_model_id: string;
     image_generator_model_id?: string | null;
+    // Configuración completa de agentConfig desde el frontend
+    writer?: {
+      providerId: string;
+      modelId: string;
+      thinkingBudget?: number;
+    };
+    editor?: {
+      providerId: string;
+      modelId: string;
+      thinkingBudget?: number;
+    };
+    image?: {
+      providerId: string;
+      modelId: string;
+    };
+    cover?: {
+      providerId: string;
+      modelId: string;
+    };
   };
   chapters?: any[]; // Añadido para que coincida con el uso en bookDataToInsert
 } 
@@ -331,12 +350,17 @@ serve(async (req) => {
 
     // 6. Create a job for the book creation
     const jobPayload = {
+      type: 'create_book', // CRÍTICO: Definir tipo de job para que el trigger filtre correctamente
       book_id: newBook.id,
       title: newBook.title, // Pass title to job payload
       user_id: userId,      // Pass user_id to job payload
       ai_config: bookPayload.ai_config // Pass ai_config to job payload
     };
-    console.log('Creating job with payload:', jobPayload);
+    console.log('Creating job');
+
+    // El job para 'generate_outline' ya no se crea aquí.
+    // El trigger que maneja 'create_book' se encargará de orquestar todos los pasos subsiguientes,
+    // incluida la generación del índice, para evitar la duplicación.
 
     const { data: job, error: jobError } = await supabaseClient
       .from('jobs')

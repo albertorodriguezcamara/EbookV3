@@ -81,6 +81,38 @@ const StepAI: React.FC = () => {
     });
   };
 
+  const handleThinkingBudgetChange = (role: keyof WizardState['agentConfig'], thinkingBudget: number) => {
+    setSelectedAgents(prev => {
+      const currentRoleConfig = prev[role];
+      if (currentRoleConfig) {
+        return {
+          ...prev,
+          [role]: { ...currentRoleConfig, thinkingBudget },
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Función para verificar si un modelo es Gemini y soporta thinking budget
+  const isGeminiModelWithThinking = (modelName: string): boolean => {
+    return modelName.includes('gemini-2.5-pro') || 
+           modelName.includes('gemini-2.5-flash') || 
+           modelName.includes('gemini-2.5-flash-lite');
+  };
+
+  // Función para obtener el rango de thinking budget según el modelo
+  const getThinkingBudgetRange = (modelName: string): { min: number, max: number, default: number } => {
+    if (modelName.includes('gemini-2.5-pro')) {
+      return { min: 128, max: 32768, default: -1 }; // Dinámico por defecto
+    } else if (modelName.includes('gemini-2.5-flash-lite')) {
+      return { min: 0, max: 24576, default: 0 }; // Desactivado por defecto
+    } else if (modelName.includes('gemini-2.5-flash')) {
+      return { min: 0, max: 24576, default: -1 }; // Dinámico por defecto
+    }
+    return { min: 0, max: 0, default: 0 };
+  };
+
   const handleIllustratedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     setIsIllustrated(checked);
@@ -179,6 +211,84 @@ const StepAI: React.FC = () => {
                 ))}
               </select>
             </div>
+            
+            {/* Configuración de Razonamiento Avanzado para Gemini */}
+            {selectedAgents[role]?.modelId && (() => {
+              const selectedModel = models.find(m => m.id === selectedAgents[role]?.modelId);
+              if (selectedModel && isGeminiModelWithThinking(selectedModel.name)) {
+                const budgetRange = getThinkingBudgetRange(selectedModel.name);
+                const currentBudget = selectedAgents[role]?.thinkingBudget ?? budgetRange.default;
+                
+                return (
+                  <div className="form-group thinking-budget-section">
+                    <label htmlFor={`${role}-thinking-budget`}>Razonamiento Avanzado:</label>
+                    <div className="thinking-budget-options">
+                      <div className="radio-group">
+                        <label className="radio-option">
+                          <input
+                            type="radio"
+                            name={`${role}-thinking-mode`}
+                            checked={currentBudget === -1}
+                            onChange={() => handleThinkingBudgetChange(role, -1)}
+                          />
+                          <span>Dinámico (Recomendado)</span>
+                          <small>El modelo ajusta automáticamente según la complejidad</small>
+                        </label>
+                        
+                        <label className="radio-option">
+                          <input
+                            type="radio"
+                            name={`${role}-thinking-mode`}
+                            checked={currentBudget === 0}
+                            onChange={() => handleThinkingBudgetChange(role, 0)}
+                          />
+                          <span>Desactivado</span>
+                          <small>Respuesta rápida sin razonamiento avanzado</small>
+                        </label>
+                        
+                        <label className="radio-option">
+                          <input
+                            type="radio"
+                            name={`${role}-thinking-mode`}
+                            checked={currentBudget > 0}
+                            onChange={() => handleThinkingBudgetChange(role, Math.max(budgetRange.min, 1024))}
+                          />
+                          <span>Personalizado</span>
+                          <small>Especifica la cantidad de tokens de razonamiento</small>
+                        </label>
+                      </div>
+                      
+                      {currentBudget > 0 && (
+                        <div className="custom-budget-input">
+                          <label htmlFor={`${role}-budget-value`}>Tokens de razonamiento:</label>
+                          <input
+                            type="number"
+                            id={`${role}-budget-value`}
+                            min={budgetRange.min}
+                            max={budgetRange.max}
+                            value={currentBudget}
+                            onChange={(e) => {
+                              const value = Math.max(budgetRange.min, Math.min(budgetRange.max, parseInt(e.target.value) || budgetRange.min));
+                              handleThinkingBudgetChange(role, value);
+                            }}
+                          />
+                          <small>Rango: {budgetRange.min.toLocaleString()} - {budgetRange.max.toLocaleString()} tokens</small>
+                        </div>
+                      )}
+                    </div>
+                    <div className="thinking-budget-info">
+                      <p><strong>ℹ️ Razonamiento Avanzado:</strong></p>
+                      <ul>
+                        <li><strong>Dinámico:</strong> Mejor calidad, el modelo decide cuánto razonar</li>
+                        <li><strong>Desactivado:</strong> Más rápido, sin razonamiento interno</li>
+                        <li><strong>Personalizado:</strong> Control manual del nivel de razonamiento</li>
+                      </ul>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         );
       })}

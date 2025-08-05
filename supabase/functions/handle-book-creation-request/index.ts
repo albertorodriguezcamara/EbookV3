@@ -16,6 +16,25 @@ interface BookCreationPayload {
     writer_model_id: string; // uuid
     editor_model_id: string; // uuid
     image_generator_model_id?: string; // uuid, optional
+    // Configuración completa de agentConfig desde el frontend
+    writer?: {
+      providerId: string;
+      modelId: string;
+      thinkingBudget?: number;
+    };
+    editor?: {
+      providerId: string;
+      modelId: string;
+      thinkingBudget?: number;
+    };
+    image?: {
+      providerId: string;
+      modelId: string;
+    };
+    cover?: {
+      providerId: string;
+      modelId: string;
+    };
   };
 }
 

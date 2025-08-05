@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import BookDetail from './pages/BookDetail'
 import Admin from './pages/Admin'
 import BookEditor from './pages/BookEditor'
+import AICreator from './pages/AICreator'
 
 // Wizard imports
 import { WizardProvider } from './pages/wizard/WizardContext'; // Importar WizardProvider
@@ -15,7 +16,8 @@ import StepCategory from './pages/wizard/steps/StepCategory';
 import StepDetails from './pages/wizard/steps/StepDetails';
 import StepAI from './pages/wizard/steps/StepAI';
 import StepReview from './pages/wizard/steps/StepReview';
-import CreatingBook from './pages/wizard/steps/CreatingBook';
+
+import BookCreationMonitorPage from './pages/BookCreationMonitorPage';
 
 function App() {
   return (
@@ -25,6 +27,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/ai-creator" element={<AICreator />} />
             <Route path="/book/:id" element={<BookDetail />} />
             <Route path="/admin/*" element={<Admin />} />
             <Route path="/book-editor" element={<BookEditor />} />
@@ -47,8 +50,10 @@ function App() {
                 </WizardProvider>
               }
             />
-            {/* Progreso de creación en vivo */}
-            <Route path="/creating-book/:id" element={<CreatingBook />} />
+            {/* La ruta antigua /creating-book/:id ha sido eliminada para forzar el uso de la nueva ruta unificada */}
+
+            {/* ✅ NUEVA RUTA UNIFICADA para el monitoreo de creación */}
+            <Route path="/book-creation/:requestId" element={<BookCreationMonitorPage />} />
           </Routes>
         </Layout>
       </Router>

@@ -1,0 +1,17 @@
+{
+  "name": "generate-book-outline",
+  "version": "1.0.0",
+  "description": "Google Cloud Function para generar esquemas de libros usando IA",
+  "main": "index.js",
+  "scripts": {
+    "start": "functions-framework --target=generate-book-outline",
+    "deploy": "gcloud functions deploy generate-book-outline --runtime=nodejs20 --trigger=http --allow-unauthenticated --entry-point=generate-book-outline --memory=8GiB --timeout=900s --region=europe-west1"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

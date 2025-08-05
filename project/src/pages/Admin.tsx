@@ -7,6 +7,8 @@ import ModelForm from '../components/ModelForm'
 import RoleManager from '../components/RoleManager'
 import CategoryAdmin from '../components/CategoryAdmin'
 import SubcategoryAttributesAdmin from '../components/SubcategoryAttributesAdmin'
+import PromptsAdmin from '../components/PromptsAdmin'
+import PromptEditor from '../components/PromptEditorImproved'
 import EditSubcategoryAttribute from './EditSubcategoryAttribute'
 import EditCategory from './EditCategory'
 import '../styles/Admin.css'
@@ -273,6 +275,11 @@ export default function Admin() {
           )}
         </section>
 
+        {/* Gestión de prompts multilingües */}
+        <div className="admin-section">
+          <PromptsAdmin />
+        </div>
+
         {/* Gestión de categorías */}
         <div className="admin-section">
           <CategoryAdmin />
@@ -382,6 +389,8 @@ export default function Admin() {
   return (
     <Routes>
       <Route index element={<AdminDashboard />} />
+      <Route path="prompts/new" element={<PromptEditor />} />
+      <Route path="prompts/edit/:id" element={<PromptEditor />} />
       <Route path="attribute/new" element={<EditSubcategoryAttribute />} />
       <Route path="attribute/:id" element={<EditSubcategoryAttribute />} />
       <Route path="category/new" element={<EditCategory />} />

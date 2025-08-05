@@ -50,6 +50,7 @@ export interface SubcategoryAttribute {
 export interface ProviderChoice {
   providerId: string;
   modelId: string;
+  thinkingBudget?: number; // Para modelos Gemini: -1 = dinámico, 0 = desactivado, >0 = valor específico
 }
 
 export interface AIProvider {
